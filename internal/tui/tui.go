@@ -504,12 +504,20 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // ============================================================================
 
 func (m *Model) openPalette() {
+	// Persist the auto-bootstrap so any subsequent mutation (add/rename/delete)
+	// operates on the fully materialized palette rather than an empty one.
+	if err := m.store.Mutate(context.Background(), func(cfg *state.Config) error {
+		cfg.EnsurePaletteFromEntries()
+		return nil
+	}); err != nil {
+		m.setErr("bootstrap palette: " + err.Error())
+		return
+	}
 	cfg, err := m.store.Load(context.Background())
 	if err != nil {
 		m.setErr("load state: " + err.Error())
 		return
 	}
-	cfg.EnsurePaletteFromEntries()
 	m.loadPaletteList(cfg)
 	m.paletteAction = paletteBrowsing
 	m.paletteDelete = ""
@@ -617,6 +625,7 @@ func (m Model) updatePalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			var added []string
 			err := m.store.Mutate(context.Background(), func(cfg *state.Config) error {
+				cfg.EnsurePaletteFromEntries()
 				added = cfg.AddAvailableTags(tag)
 				return nil
 			})
@@ -653,6 +662,7 @@ func (m Model) updatePalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			err := m.store.Mutate(context.Background(), func(cfg *state.Config) error {
+				cfg.EnsurePaletteFromEntries()
 				return cfg.RenameAvailableTag(oldTag, newTag)
 			})
 			if err != nil {
@@ -676,6 +686,7 @@ func (m Model) updatePalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			var removed []string
 			err := m.store.Mutate(context.Background(), func(cfg *state.Config) error {
+				cfg.EnsurePaletteFromEntries()
 				removed = cfg.RemoveAvailableTags(victim)
 				return nil
 			})
