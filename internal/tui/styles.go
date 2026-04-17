@@ -1,46 +1,56 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"os"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+// renderer is explicitly bound to stderr so lipgloss profiles the terminal
+// capability of the render target (stderr), not stdout. When kcm runs through
+// the shell hook, stdout is captured by `eval "$(...)"` and would otherwise
+// be classified as non-TTY, stripping all color codes from the TUI.
+var renderer = lipgloss.NewRenderer(os.Stderr)
 
 var (
-	titleStyle = lipgloss.NewStyle().
+	titleStyle = renderer.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#7D56F4")).
 			Padding(0, 1)
 
-	helpStyle = lipgloss.NewStyle().
+	helpStyle = renderer.NewStyle().
 			Foreground(lipgloss.Color("241")).
 			Padding(0, 1)
 
-	statusStyle = lipgloss.NewStyle().
+	statusStyle = renderer.NewStyle().
 			Foreground(lipgloss.Color("34")).
 			Padding(0, 1)
 
-	errorStyle = lipgloss.NewStyle().
+	errorStyle = renderer.NewStyle().
 			Foreground(lipgloss.Color("196")).
 			Padding(0, 1)
 
-	tagStyle = lipgloss.NewStyle().
+	tagStyle = renderer.NewStyle().
 			Foreground(lipgloss.Color("#A6E3A1")).
 			Bold(true)
 
-	alertBadgeStyle = lipgloss.NewStyle().
+	alertBadgeStyle = renderer.NewStyle().
 			Foreground(lipgloss.Color("196")).
 			Bold(true)
 
-	currentContextStyle = lipgloss.NewStyle().
+	currentContextStyle = renderer.NewStyle().
 				Foreground(lipgloss.Color("#89DCEB"))
 
-	modalBorderStyle = lipgloss.NewStyle().
+	modalBorderStyle = renderer.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("#7D56F4")).
 				Padding(1, 2)
 
-	detailHeaderStyle = lipgloss.NewStyle().
+	detailHeaderStyle = renderer.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("#F5C2E7"))
 
-	tableHeaderStyle = lipgloss.NewStyle().
+	tableHeaderStyle = renderer.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("241"))
 )
