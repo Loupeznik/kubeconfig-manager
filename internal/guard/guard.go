@@ -16,6 +16,7 @@ type Trigger struct {
 	Path         string
 	Hash         string
 	Entry        state.Entry
+	Policy       state.Alerts
 	ClusterName  string
 	ContextName  string
 	MatchedVerbs []string
@@ -31,7 +32,7 @@ func (d Decision) Alert() bool { return len(d.Triggers) > 0 }
 
 func (d Decision) RequireConfirm() bool {
 	for _, t := range d.Triggers {
-		if t.Entry.Alerts.RequireConfirmation || t.Entry.Alerts.ConfirmClusterName {
+		if t.Policy.RequireConfirmation || t.Policy.ConfirmClusterName {
 			return true
 		}
 	}
@@ -40,7 +41,7 @@ func (d Decision) RequireConfirm() bool {
 
 func (d Decision) RequireClusterName() bool {
 	for _, t := range d.Triggers {
-		if t.Entry.Alerts.ConfirmClusterName {
+		if t.Policy.ConfirmClusterName {
 			return true
 		}
 	}
@@ -81,16 +82,34 @@ func Evaluate(ctx context.Context, store state.Store, kubeconfigEnv string, args
 		return d, err
 	}
 
+	argContext := ExtractContext(args)
+
 	for _, p := range paths {
 		hash, err := kubeconfig.HashFile(p)
 		if err != nil {
 			continue
 		}
 		entry, ok := cfg.Entries[hash]
-		if !ok || !entry.Alerts.Enabled {
+		if !ok {
 			continue
 		}
-		verbs := entry.Alerts.BlockedVerbs
+
+		activeContext := argContext
+		var clusterName string
+		if f, err := kubeconfig.Load(p); err == nil {
+			if activeContext == "" {
+				activeContext = f.Config.CurrentContext
+			}
+			if kctx, ok := f.Config.Contexts[activeContext]; ok && kctx != nil {
+				clusterName = kctx.Cluster
+			}
+		}
+
+		policy := entry.ResolveAlerts(activeContext)
+		if !policy.Enabled {
+			continue
+		}
+		verbs := policy.BlockedVerbs
 		if len(verbs) == 0 {
 			verbs = state.DefaultBlockedVerbs()
 		}
@@ -98,19 +117,15 @@ func Evaluate(ctx context.Context, store state.Store, kubeconfigEnv string, args
 			continue
 		}
 
-		trigger := Trigger{
+		d.Triggers = append(d.Triggers, Trigger{
 			Path:         p,
 			Hash:         hash,
 			Entry:        entry,
+			ContextName:  activeContext,
+			ClusterName:  clusterName,
+			Policy:       policy,
 			MatchedVerbs: []string{verb},
-		}
-		if f, err := kubeconfig.Load(p); err == nil {
-			trigger.ContextName = f.Config.CurrentContext
-			if ctx, ok := f.Config.Contexts[f.Config.CurrentContext]; ok && ctx != nil {
-				trigger.ClusterName = ctx.Cluster
-			}
-		}
-		d.Triggers = append(d.Triggers, trigger)
+		})
 	}
 	return d, nil
 }

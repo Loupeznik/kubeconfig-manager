@@ -1,6 +1,6 @@
 ## kcm alert enable
 
-Enable alerts for a kubeconfig (populates default blocked verbs)
+Enable alerts (file-level, or --context for one context only)
 
 ```
 kcm alert enable <file> [flags]
@@ -9,11 +9,12 @@ kcm alert enable <file> [flags]
 ### Options
 
 ```
-      --dir string   Kubeconfig directory (default: ~/.kube)
-  -h, --help         help for enable
+      --context string   Apply to this context only (default: file-level)
+      --dir string       Kubeconfig directory (default: ~/.kube)
+  -h, --help             help for enable
 ```
 
 ### SEE ALSO
 
-* [kcm alert](kcm_alert.md)	 - Configure destructive-action alerts per kubeconfig
+* [kcm alert](kcm_alert.md)	 - Configure destructive-action alerts per kubeconfig or context
 

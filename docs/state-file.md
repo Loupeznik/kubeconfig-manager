@@ -17,17 +17,32 @@ entries:
     path_hint: prod.yaml                  # last-known filename, informational
     display_name: "Prod EU"               # future: TUI label (v0.9 stores but doesn't edit)
     tags: [prod, eu, critical]
-    alerts:
+    alerts:                               # file-level (applies to every context in the file)
       enabled: true
       require_confirmation: true
       confirm_cluster_name: false
       blocked_verbs: [delete, drain, cordon, uncordon, taint, replace, patch]
+    context_alerts:                       # per-context override map (takes precedence over file-level)
+      prod-eu:
+        enabled: true
+        confirm_cluster_name: true        # stricter policy for this one context
+        blocked_verbs: [delete, drain, patch, apply]
+      prod-us:
+        enabled: false                    # explicitly disabled for this context even though file-level is on
     updated_at: 2026-04-17T12:00:00Z
   sha256:218b0740...:
     path_hint: staging.yaml
     tags: [staging]
     updated_at: 2026-04-17T12:05:00Z
 ```
+
+### Per-context alert resolution
+
+For a given kubectl invocation, `kcm` resolves the active context (from `--context <name>` on the args, or the kubeconfig's `current-context`) and then picks the alert policy in this order:
+
+1. `entries[hash].context_alerts[<active-context>]` if present — the per-context policy wins, even if it sets `enabled: false` to explicitly suppress a file-level policy.
+2. Otherwise, `entries[hash].alerts` — the file-level policy applies.
+3. Otherwise, no alert fires.
 
 ### Why content-hash keys?
 

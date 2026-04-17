@@ -204,6 +204,117 @@ func TestEvaluateNoVerbNoAlert(t *testing.T) {
 	}
 }
 
+func TestContextAlertOverrideWins(t *testing.T) {
+	dir := t.TempDir()
+	path := writeKubeconfig(t, dir, "prod.yaml")
+	store := newTestStore(t)
+	// File-level: disabled. Context-level (for the file's current-context "prod"): enabled for delete.
+	seedEntry(t, store, path, state.Entry{
+		Alerts: state.Alerts{Enabled: false},
+		ContextAlerts: map[string]state.Alerts{
+			"prod": {
+				Enabled:             true,
+				RequireConfirmation: true,
+				BlockedVerbs:        []string{"delete"},
+			},
+		},
+	})
+
+	d, err := Evaluate(context.Background(), store, path, []string{"delete", "pod", "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.Alert() {
+		t.Fatal("expected context-level override to trigger")
+	}
+	if d.Triggers[0].ContextName != "prod" {
+		t.Errorf("context: got %q", d.Triggers[0].ContextName)
+	}
+}
+
+func TestContextAlertExplicitDisableOverridesFileLevel(t *testing.T) {
+	dir := t.TempDir()
+	path := writeKubeconfig(t, dir, "prod.yaml")
+	store := newTestStore(t)
+	// File-level: enabled for delete. Context-level: explicitly disabled.
+	seedEntry(t, store, path, state.Entry{
+		Alerts: state.Alerts{Enabled: true, BlockedVerbs: []string{"delete"}},
+		ContextAlerts: map[string]state.Alerts{
+			"prod": {Enabled: false},
+		},
+	})
+
+	d, err := Evaluate(context.Background(), store, path, []string{"delete", "pod", "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Alert() {
+		t.Fatal("context-level disable should suppress alert")
+	}
+}
+
+func TestContextAlertFallsBackToFileLevelWhenNoOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := writeKubeconfig(t, dir, "prod.yaml")
+	store := newTestStore(t)
+	// File-level only; no context override.
+	seedEntry(t, store, path, state.Entry{
+		Alerts: state.Alerts{Enabled: true, BlockedVerbs: []string{"delete"}},
+	})
+
+	d, err := Evaluate(context.Background(), store, path, []string{"delete", "pod", "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.Alert() {
+		t.Fatal("expected file-level policy to apply")
+	}
+}
+
+func TestContextAlertHonorsArgContextFlag(t *testing.T) {
+	dir := t.TempDir()
+	path := writeKubeconfig(t, dir, "prod.yaml")
+	store := newTestStore(t)
+	// File-level: disabled. Context-level for "other" (NOT the current-context): enabled.
+	seedEntry(t, store, path, state.Entry{
+		Alerts: state.Alerts{Enabled: false},
+		ContextAlerts: map[string]state.Alerts{
+			"other": {Enabled: true, BlockedVerbs: []string{"delete"}},
+		},
+	})
+
+	// When user passes --context=other, that context's policy should apply.
+	d, err := Evaluate(context.Background(), store, path, []string{"--context=other", "delete", "pod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.Alert() {
+		t.Fatal("expected --context override to pick context-level policy")
+	}
+	if d.Triggers[0].ContextName != "other" {
+		t.Errorf("context: got %q, want other", d.Triggers[0].ContextName)
+	}
+}
+
+func TestExtractContext(t *testing.T) {
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"delete", "pod"}, ""},
+		{[]string{"--context", "prod", "delete"}, "prod"},
+		{[]string{"--context=prod", "delete"}, "prod"},
+		{[]string{"-n", "ns", "--context", "prod", "delete"}, "prod"},
+		{[]string{"--context"}, ""},
+	}
+	for _, tt := range cases {
+		got := ExtractContext(tt.args)
+		if got != tt.want {
+			t.Errorf("ExtractContext(%v) = %q, want %q", tt.args, got, tt.want)
+		}
+	}
+}
+
 func TestRequireClusterName(t *testing.T) {
 	dir := t.TempDir()
 	path := writeKubeconfig(t, dir, "prod.yaml")

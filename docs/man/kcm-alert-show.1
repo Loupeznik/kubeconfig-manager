@@ -2,7 +2,7 @@
 .TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
 
 .SH NAME
-kcm-alert-show - Show alert policy for a kubeconfig
+kcm-alert-show - Show alert policy (file-level, per-context, or --context to filter)
 
 
 .SH SYNOPSIS
@@ -10,10 +10,14 @@ kcm-alert-show - Show alert policy for a kubeconfig
 
 
 .SH DESCRIPTION
-Show alert policy for a kubeconfig
+Show alert policy (file-level, per-context, or --context to filter)
 
 
 .SH OPTIONS
+\fB--context\fP=""
+	Apply to this context only (default: file-level)
+
+.PP
 \fB--dir\fP=""
 	Kubeconfig directory (default: ~/.kube)
 

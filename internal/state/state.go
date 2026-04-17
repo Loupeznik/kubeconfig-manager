@@ -21,11 +21,12 @@ const (
 )
 
 type Entry struct {
-	PathHint    string    `yaml:"path_hint,omitempty"`
-	DisplayName string    `yaml:"display_name,omitempty"`
-	Tags        []string  `yaml:"tags,omitempty"`
-	Alerts      Alerts    `yaml:"alerts,omitempty"`
-	UpdatedAt   time.Time `yaml:"updated_at"`
+	PathHint      string            `yaml:"path_hint,omitempty"`
+	DisplayName   string            `yaml:"display_name,omitempty"`
+	Tags          []string          `yaml:"tags,omitempty"`
+	Alerts        Alerts            `yaml:"alerts,omitempty"`
+	ContextAlerts map[string]Alerts `yaml:"context_alerts,omitempty"`
+	UpdatedAt     time.Time         `yaml:"updated_at"`
 }
 
 type Alerts struct {
@@ -33,6 +34,18 @@ type Alerts struct {
 	RequireConfirmation bool     `yaml:"require_confirmation,omitempty"`
 	ConfirmClusterName  bool     `yaml:"confirm_cluster_name,omitempty"`
 	BlockedVerbs        []string `yaml:"blocked_verbs,omitempty"`
+}
+
+// ResolveAlerts returns the active alert policy for a given context within
+// this entry. A per-context override (if present) wins over the file-level
+// policy; if neither is set, the zero Alerts{} is returned.
+func (e Entry) ResolveAlerts(contextName string) Alerts {
+	if contextName != "" {
+		if a, ok := e.ContextAlerts[contextName]; ok {
+			return a
+		}
+	}
+	return e.Alerts
 }
 
 type Config struct {

@@ -15,10 +15,18 @@ Tags are free-form, whitespace is trimmed, duplicates are ignored. They appear i
 
 ## Alerts
 
+Alerts can be set at two scopes, with per-context overrides winning over file-level policy. See [state-file.md](state-file.md#per-context-alert-resolution) for the resolution order.
+
 ```sh
+# File-level (applies to every context in the file)
 kcm alert enable prod                     # enables with sensible defaults
-kcm alert show prod                       # current policy
+kcm alert show prod                       # shows file-level + any per-context overrides
 kcm alert disable prod
+
+# Per-context (overrides file-level for that one context)
+kcm alert enable prod --context prod-eu
+kcm alert disable prod --context prod-us  # explicitly disabled for this context only
+kcm alert show prod --context prod-eu     # resolved policy for that context
 ```
 
 Default policy on `enable`:

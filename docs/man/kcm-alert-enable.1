@@ -2,7 +2,7 @@
 .TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
 
 .SH NAME
-kcm-alert-enable - Enable alerts for a kubeconfig (populates default blocked verbs)
+kcm-alert-enable - Enable alerts (file-level, or --context for one context only)
 
 
 .SH SYNOPSIS
@@ -10,10 +10,14 @@ kcm-alert-enable - Enable alerts for a kubeconfig (populates default blocked ver
 
 
 .SH DESCRIPTION
-Enable alerts for a kubeconfig (populates default blocked verbs)
+Enable alerts (file-level, or --context for one context only)
 
 
 .SH OPTIONS
+\fB--context\fP=""
+	Apply to this context only (default: file-level)
+
+.PP
 \fB--dir\fP=""
 	Kubeconfig directory (default: ~/.kube)
 

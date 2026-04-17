@@ -27,6 +27,19 @@ Resolution: per-entry > global > off (default off).
 
 Reuses Phase 5's confirmation flow and the same opt-in shell-alias pattern as the `kubectl` alias.
 
+## Dynamic shell completion
+
+Cobra already ships static completion via `kcm completion <bash|zsh|pwsh>` (fang wires this up automatically), but we can do better. Wire `cobra.ValidArgsFunction` on:
+
+- `kcm use <TAB>` — complete with kubeconfig filenames in the managed directory.
+- `kcm show <TAB>`, `kcm tag add/remove <TAB>`, `kcm alert enable/disable/show <TAB>`, `kcm rename <TAB>`, `kcm split <TAB>` — same.
+- `kcm alert enable <file> --context <TAB>` — complete with context names parsed from that file.
+- `kcm contexts --file <TAB>` — same.
+
+Implementation sketch: each completion function uses `kubeconfig.ScanDir()` + the resolved `--dir` flag value to produce names, and per-context completions additionally call `kubeconfig.Load()` to enumerate `Contexts`. Results are cached in-process for a single command invocation.
+
+One concrete payoff: `kcm alert enable prod --context <TAB><TAB>` should list the contexts actually present in `prod.yaml`, so the user can't typo a context name into the state file.
+
 ## Fish shell support
 
 Adding `fish` to the shell formatter is a handful of lines (different syntax for `set -x KUBECONFIG`). Deferred because the three included shells (bash, zsh, pwsh) cover the vast majority of users; revisit if requested.

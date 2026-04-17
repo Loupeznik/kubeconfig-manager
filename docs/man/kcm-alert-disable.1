@@ -2,7 +2,7 @@
 .TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
 
 .SH NAME
-kcm-alert-disable - Disable alerts for a kubeconfig
+kcm-alert-disable - Disable alerts (file-level, or --context for one context only)
 
 
 .SH SYNOPSIS
@@ -10,10 +10,14 @@ kcm-alert-disable - Disable alerts for a kubeconfig
 
 
 .SH DESCRIPTION
-Disable alerts for a kubeconfig
+Disable alerts (file-level, or --context for one context only)
 
 
 .SH OPTIONS
+\fB--context\fP=""
+	Apply to this context only (default: file-level)
+
+.PP
 \fB--dir\fP=""
 	Kubeconfig directory (default: ~/.kube)
 
