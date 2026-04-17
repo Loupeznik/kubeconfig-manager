@@ -23,6 +23,8 @@ func NewRootCmd() *cobra.Command {
 
 	root.AddCommand(
 		newListCmd(),
+		newShowCmd(),
+		newContextsCmd(),
 		newUseCmd(),
 		newTagCmd(),
 		newAlertCmd(),

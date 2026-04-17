@@ -8,14 +8,6 @@ import (
 
 var errNotImplemented = errors.New("not implemented yet")
 
-func newListCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "list",
-		Short: "List kubeconfig files in the managed directory",
-		RunE:  func(cmd *cobra.Command, args []string) error { return errNotImplemented },
-	}
-}
-
 func newUseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "use <name-or-file>",
