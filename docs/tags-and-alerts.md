@@ -37,7 +37,7 @@ Alerts only fire when you run `kubectl` **through** `kcm`:
 
 ## Custom blocked verbs
 
-The default list covers the most common foot-guns, but you can edit the state file directly (see [state-file.md](state-file.md)) to customize `blocked_verbs` per kubeconfig. CLI commands for custom verb lists are not in v0.1 scope — open an issue if you want them.
+The default list covers the most common foot-guns, but you can edit the state file directly (see [state-file.md](state-file.md)) to customize `blocked_verbs` per kubeconfig. CLI commands for custom verb lists are not in v0.9 scope — open an issue if you want them.
 
 ## Metadata and renames
 

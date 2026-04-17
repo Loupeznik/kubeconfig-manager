@@ -15,7 +15,7 @@ kubeconfig_dir: /home/you/.kube           # optional; informational
 entries:
   sha256:9f04fe2c...:                     # key = SHA-256 of the kubeconfig file's bytes
     path_hint: prod.yaml                  # last-known filename, informational
-    display_name: "Prod EU"               # future: TUI label (v0.1 stores but doesn't edit)
+    display_name: "Prod EU"               # future: TUI label (v0.9 stores but doesn't edit)
     tags: [prod, eu, critical]
     alerts:
       enabled: true

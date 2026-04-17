@@ -1,6 +1,6 @@
 # Roadmap
 
-Features explicitly deferred out of v0.1, in rough priority order.
+Features explicitly deferred out of v0.9, in rough priority order.
 
 ## Cloud sync
 
@@ -62,7 +62,7 @@ For a CLI tool's reference docs, MkDocs Material hits the sweet spot.
 
 ## TUI parity with CLI ops
 
-The TUI currently covers list, detail, tag-edit, rename, and alert toggle. Import/split/merge/use are CLI-only for v0.1. Adding a "File" menu with those ops is a modest Bubble Tea extension — the backing operations already live in `internal/kubeconfig/ops.go`.
+The TUI currently covers list, detail, tag-edit, rename, and alert toggle. Import/split/merge/use are CLI-only for v0.9. Adding a "File" menu with those ops is a modest Bubble Tea extension — the backing operations already live in `internal/kubeconfig/ops.go`.
 
 ## Group-scoped alerts by tag
 

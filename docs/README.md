@@ -34,7 +34,7 @@ Auto-generated from the Cobra command tree. Regenerate with `go run scripts/gend
 - [`kcm uninstall-shell-hook`](cli/kcm_uninstall-shell-hook.md)
 
 ### Man pages
-Installable man pages are generated into [`man/`](man/). After `goreleaser` publishes a release, these are also packaged for download.
+Installable man pages are generated into the `man/` directory alongside the markdown (`man/kcm.1`, `man/kcm-list.1`, …). After `goreleaser` publishes a release, these are packaged into the downloadable archives.
 
 ## Hosting documentation
 
