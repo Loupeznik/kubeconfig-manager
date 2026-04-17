@@ -11,6 +11,7 @@ kcm list [flags]
 ```
       --dir string   Kubeconfig directory (default: ~/.kube)
   -h, --help         help for list
+  -v, --verbose      Show files that were skipped because they couldn't be parsed as kubeconfigs
 ```
 
 ### SEE ALSO

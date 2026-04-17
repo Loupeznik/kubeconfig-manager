@@ -13,6 +13,7 @@ import (
 
 func newListCmd() *cobra.Command {
 	var dir string
+	var verbose bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List kubeconfig files in the managed directory",
@@ -61,8 +62,10 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			for _, w := range result.Warnings {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: skipped %s: %v\n", w.Path, w.Err)
+			if verbose {
+				for _, w := range result.Warnings {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "skipped %s: %v\n", w.Path, w.Err)
+				}
 			}
 			if len(result.Files) == 0 {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "no kubeconfig files found in %s\n", resolvedDir)
@@ -71,6 +74,7 @@ func newListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show files that were skipped because they couldn't be parsed as kubeconfigs")
 	return cmd
 }
 
