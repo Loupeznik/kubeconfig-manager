@@ -1,0 +1,30 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-merge - Merge two kubeconfig files into a new file
+
+
+.SH SYNOPSIS
+\fBkcm merge    [flags]\fP
+
+
+.SH DESCRIPTION
+Merge two kubeconfig files into a new file
+
+
+.SH OPTIONS
+\fB--force\fP[=false]
+	Overwrite the destination if it exists
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for merge
+
+.PP
+\fB--on-conflict\fP="error"
+	error | skip | overwrite
+
+
+.SH SEE ALSO
+\fBkcm(1)\fP

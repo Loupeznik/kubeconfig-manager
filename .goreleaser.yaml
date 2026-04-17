@@ -15,9 +15,9 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
-      - arm64
     ldflags:
       - -s -w
       - -X github.com/loupeznik/kubeconfig-manager/internal/cli.Version={{ .Version }}
@@ -28,10 +28,14 @@ archives:
   - id: kcm
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     files:
       - LICENSE
       - NOTICE
       - README.md
+      - docs/**/*
 
 checksum:
   name_template: "checksums.txt"

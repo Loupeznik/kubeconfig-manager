@@ -1,0 +1,30 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-split - Extract a context (with its cluster and user) into its own file
+
+
+.SH SYNOPSIS
+\fBkcm split   [flags]\fP
+
+
+.SH DESCRIPTION
+Extract a context (with its cluster and user) into its own file
+
+
+.SH OPTIONS
+\fB--from\fP=""
+	Source kubeconfig (default: ~/.kube/config)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for split
+
+.PP
+\fB--remove\fP[=false]
+	Remove the extracted context from the source file
+
+
+.SH SEE ALSO
+\fBkcm(1)\fP

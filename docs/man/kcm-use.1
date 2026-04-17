@@ -1,0 +1,30 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-use - Print a shell snippet that exports KUBECONFIG to the selected file
+
+
+.SH SYNOPSIS
+\fBkcm use  [flags]\fP
+
+
+.SH DESCRIPTION
+Print a shell snippet that exports KUBECONFIG to the selected file
+
+
+.SH OPTIONS
+\fB--dir\fP=""
+	Kubeconfig directory (default: ~/.kube)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for use
+
+.PP
+\fB--shell\fP=""
+	Shell to emit for: bash, zsh, pwsh (auto-detected if unset)
+
+
+.SH SEE ALSO
+\fBkcm(1)\fP

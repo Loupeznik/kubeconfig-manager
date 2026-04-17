@@ -1,0 +1,30 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-import - Merge a kubeconfig file into the default ~/.kube/config (or --into)
+
+
+.SH SYNOPSIS
+\fBkcm import  [flags]\fP
+
+
+.SH DESCRIPTION
+Merge a kubeconfig file into the default ~/.kube/config (or --into)
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for import
+
+.PP
+\fB--into\fP=""
+	Destination kubeconfig (default: ~/.kube/config)
+
+.PP
+\fB--on-conflict\fP="error"
+	error | skip | overwrite
+
+
+.SH SEE ALSO
+\fBkcm(1)\fP

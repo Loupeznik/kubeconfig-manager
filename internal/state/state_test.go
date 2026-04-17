@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -75,6 +76,9 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 }
 
 func TestSaveHasSecureFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix permission bits do not apply on Windows")
+	}
 	ctx := context.Background()
 	s := newTestStore(t)
 	cfg := NewConfig()

@@ -1,19 +1,20 @@
 # kubeconfig-manager
 
+[![ci](https://github.com/loupeznik/kubeconfig-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/loupeznik/kubeconfig-manager/actions/workflows/ci.yml)
+[![release](https://github.com/loupeznik/kubeconfig-manager/actions/workflows/release.yml/badge.svg)](https://github.com/loupeznik/kubeconfig-manager/actions/workflows/release.yml)
+
 `kcm` — a TUI + CLI for managing local kubeconfig files and kubectl contexts, with tagging and destructive-action guardrails.
 
-## Status
+Full docs live in [`docs/`](docs/README.md) — start with [Getting started](docs/getting-started.md).
 
-Early scaffold. Subcommands are registered but not yet implemented. See [`.sisyphus/drafts/kubeconfig-manager-bootstrap.md`](.sisyphus/drafts/kubeconfig-manager-bootstrap.md) for the full analysis and phased implementation plan.
+## Features
 
-## Features (planned v0.1)
-
-- Browse and manage kubeconfig files in a configurable directory (default `~/.kube`).
-- Attach tags and a display name to each kubeconfig (local state, content-hash keyed, sync-ready).
-- Configure destructive-action alerts per kubeconfig (warn on `delete`, `drain`, `cordon`, etc. when invoked via `kcm kubectl`).
-- Switch kubeconfigs by printing an `export KUBECONFIG=...` line for `bash`, `zsh`, and `powershell`.
-- Import, split, and merge kubeconfigs against the default `~/.kube/config`.
-- Bubble Tea TUI for all of the above.
+- Browse kubeconfig files in a configurable directory (default `~/.kube`).
+- Attach tags and alert policies to each kubeconfig — metadata is keyed by the file's SHA-256 so it survives renames and is ready for cloud sync.
+- Destructive-action guard: `kcm kubectl delete|drain|cordon|...` prompts for confirmation on flagged kubeconfigs.
+- Switch kubeconfigs with a shell-appropriate `export KUBECONFIG=...` line (bash / zsh / pwsh).
+- Import, split, and merge kubeconfigs via `clientcmd` — atomic writes, no half-written files.
+- Bubble Tea TUI with list, detail, tag editor, rename, and alert toggle.
 
 ## Install
 
@@ -72,6 +73,29 @@ kubeconfig-manager uninstall-shell-hook
 ```
 
 Removes the fenced block; the rest of your rc file is preserved. You can also edit the rc file manually — the block is clearly marked with `# >>> kubeconfig-manager shell hook >>>` / `# <<< kubeconfig-manager shell hook <<<` fences.
+
+## Documentation
+
+- [User docs index](docs/README.md)
+- [Getting started](docs/getting-started.md)
+- [Shell integration](docs/shell-integration.md)
+- [Destructive-action guard](docs/guard.md)
+- [State file schema](docs/state-file.md)
+- [Architecture](docs/architecture.md)
+- [Roadmap](docs/roadmap.md) (deferred features + docs-site framework recommendation)
+
+CLI reference and man pages are regenerated from the command tree:
+
+```sh
+go run scripts/gendocs.go
+```
+
+## Contributing
+
+1. `scripts/build.sh` — builds `./bin/kcm` with version info baked in.
+2. `scripts/lint.sh` — gofmt, `go vet`, `golangci-lint`.
+3. `go test ./...` — 66 unit tests across kubeconfig ops, state, shell, and guard packages.
+4. Run the binary against `./.temp/` rather than the real `~/.kube/` during development (seed mock kubeconfigs there; it's gitignored).
 
 ## License
 

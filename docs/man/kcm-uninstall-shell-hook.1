@@ -1,0 +1,30 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-uninstall-shell-hook - Remove the shell integration block from the rc file
+
+
+.SH SYNOPSIS
+\fBkcm uninstall-shell-hook [flags]\fP
+
+
+.SH DESCRIPTION
+Remove the shell integration block from the rc file
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for uninstall-shell-hook
+
+.PP
+\fB--rc\fP=""
+	rc file path (default depends on shell)
+
+.PP
+\fB--shell\fP=""
+	bash, zsh, or pwsh (auto-detected if unset)
+
+
+.SH SEE ALSO
+\fBkcm(1)\fP
