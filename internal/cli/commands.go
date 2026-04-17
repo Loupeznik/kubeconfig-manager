@@ -15,8 +15,6 @@ import (
 	"github.com/loupeznik/kubeconfig-manager/internal/tui"
 )
 
-var errNotImplemented = errors.New("not implemented yet")
-
 func newUseCmd() *cobra.Command {
 	var dir string
 	var shellFlag string
@@ -52,33 +50,6 @@ func newUseCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
 	cmd.Flags().StringVar(&shellFlag, "shell", "", "Shell to emit for: bash, zsh, pwsh (auto-detected if unset)")
 	return cmd
-}
-
-func newImportCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "import <file>",
-		Short: "Import a kubeconfig file into the default ~/.kube/config",
-		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return errNotImplemented },
-	}
-}
-
-func newSplitCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "split <context> <out-file>",
-		Short: "Split a context out of ~/.kube/config into its own file",
-		Args:  cobra.ExactArgs(2),
-		RunE:  func(cmd *cobra.Command, args []string) error { return errNotImplemented },
-	}
-}
-
-func newMergeCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "merge <a> <b> <out>",
-		Short: "Merge two kubeconfig files into a new file",
-		Args:  cobra.ExactArgs(3),
-		RunE:  func(cmd *cobra.Command, args []string) error { return errNotImplemented },
-	}
 }
 
 func newKubectlCmd() *cobra.Command {
