@@ -2,19 +2,37 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/loupeznik/kubeconfig-manager/internal/kubeconfig"
+	"github.com/loupeznik/kubeconfig-manager/internal/state"
+	"github.com/loupeznik/kubeconfig-manager/internal/tui"
 )
 
 var errNotImplemented = errors.New("not implemented yet")
 
 func newUseCmd() *cobra.Command {
+	var dir string
 	cmd := &cobra.Command{
 		Use:   "use <name-or-file>",
 		Short: "Print a shell snippet that exports KUBECONFIG to the selected file",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return errNotImplemented },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			resolvedDir, err := resolveDir(dir)
+			if err != nil {
+				return err
+			}
+			path, err := kubeconfig.ResolvePath(args[0], resolvedDir)
+			if err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "export KUBECONFIG=%q\n", path)
+			return nil
+		},
 	}
+	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
 	cmd.Flags().String("shell", "", "Shell to emit for: bash, zsh, pwsh (auto-detected if unset)")
 	return cmd
 }
@@ -57,11 +75,31 @@ func newKubectlCmd() *cobra.Command {
 }
 
 func newTUICmd() *cobra.Command {
-	return &cobra.Command{
+	var dir string
+	cmd := &cobra.Command{
 		Use:   "tui",
 		Short: "Launch the interactive TUI",
-		RunE:  func(cmd *cobra.Command, args []string) error { return errNotImplemented },
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			resolvedDir, err := resolveDir(dir)
+			if err != nil {
+				return err
+			}
+			store, err := state.DefaultStore()
+			if err != nil {
+				return err
+			}
+			selected, err := tui.Run(cmd.Context(), resolvedDir, store)
+			if err != nil {
+				return err
+			}
+			if selected != "" {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "export KUBECONFIG=%q\n", selected)
+			}
+			return nil
+		},
 	}
+	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
+	return cmd
 }
 
 func newInstallShellHookCmd() *cobra.Command {
