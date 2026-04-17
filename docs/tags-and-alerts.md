@@ -48,6 +48,18 @@ With a populated palette, pressing `t` in the TUI opens a multi-select picker of
 
 If the palette is empty, the editor falls back to a comma-separated text input and suggests populating the palette.
 
+### TUI palette management
+
+Press `p` from the file list to open the palette view — each tag is shown with its usage locations:
+
+- `n` — add a new tag (focuses an input, `↵` to confirm)
+- `r` — rename the highlighted tag (updates the palette and every kubeconfig/context that uses it)
+- `d` — delete the highlighted tag (confirm with `y`; also scrubs the tag from every kubeconfig/context that references it)
+- `/` — filter by tag name
+- `esc` — back to the file list
+
+Each item's description shows "used in N place(s): prod.yaml, prod.yaml/prod-eu, ..." so you can see impact before renaming or deleting.
+
 ## Alerts
 
 Alerts can be set at two scopes, with per-context overrides winning over file-level policy. See [state-file.md](state-file.md#per-context-alert-resolution) for the resolution order.

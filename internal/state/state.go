@@ -197,6 +197,54 @@ func (c *Config) RemoveAvailableTags(tags ...string) (removed []string) {
 	return removed
 }
 
+// RenameAvailableTag renames a palette tag and updates every entry that
+// references the old name (both file-level and per-context). Returns an error
+// if the new name is empty, already present, or the old name is not found.
+func (c *Config) RenameAvailableTag(oldTag, newTag string) error {
+	oldTag = normalizeTag(oldTag)
+	newTag = normalizeTag(newTag)
+	if newTag == "" {
+		return errors.New("new tag name cannot be empty")
+	}
+	if oldTag == newTag {
+		return nil
+	}
+	for _, t := range c.AvailableTags {
+		if t == newTag {
+			return fmt.Errorf("tag %q already exists in palette", newTag)
+		}
+	}
+	idx := -1
+	for i, t := range c.AvailableTags {
+		if t == oldTag {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return fmt.Errorf("tag %q not found in palette", oldTag)
+	}
+	c.AvailableTags[idx] = newTag
+
+	for hash, entry := range c.Entries {
+		for i, t := range entry.Tags {
+			if t == oldTag {
+				entry.Tags[i] = newTag
+			}
+		}
+		for ctxName, ctxTags := range entry.ContextTags {
+			for i, t := range ctxTags {
+				if t == oldTag {
+					ctxTags[i] = newTag
+				}
+			}
+			entry.ContextTags[ctxName] = ctxTags
+		}
+		c.Entries[hash] = entry
+	}
+	return nil
+}
+
 // IsTagInPalette checks membership.
 func (c *Config) IsTagInPalette(tag string) bool {
 	tag = normalizeTag(tag)

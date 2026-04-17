@@ -44,6 +44,16 @@ One concrete payoff: `kcm alert enable prod --context <TAB><TAB>` should list th
 
 Adding `fish` to the shell formatter is a handful of lines (different syntax for `set -x KUBECONFIG`). Deferred because the three included shells (bash, zsh, pwsh) cover the vast majority of users; revisit if requested.
 
+## Integration test suite
+
+v0.9 ships with unit tests (~70 test cases across `shell`, `state`, `kubeconfig`, and `guard`) plus light cross-package tests that hit the real filesystem. No CLI-level or end-to-end coverage yet. Planned for v0.9.x:
+
+- **CLI golden tests** (`internal/cli/*_test.go`) — instantiate `cli.NewRootCmd()`, feed `args`, capture `stdout`/`stderr`, assert against golden files. Fastest path to high-value coverage — the command tree is where most user-facing behavior lives and is currently untested.
+- **End-to-end binary tests** using [`rsc.io/script`](https://pkg.go.dev/rsc.io/script/scripttest) or the built-in [`testscript`](https://pkg.go.dev/github.com/rogpeppe/go-internal/testscript). Drives the compiled `kcm` binary through scripted `.txt` scenarios covering the shell-hook flow, `kcm use` → `eval`, `kcm tag palette` lifecycle, and the `kcm kubectl` guard path with a fake `kubectl`.
+- **Guard exec path** — currently the verb-detection and policy-resolution are covered, but `guard.Exec` (the actual `kubectl` spawn + stdin/stdout/exit-code passthrough) has no test. A small integration test using a stub `kubectl` binary can close this.
+
+**Not planned:** TUI snapshot tests via `teatest`. Manual TUI verification has been reliable so far; the ROI of snapshot tests against a fast-moving UI surface isn't worth the flake budget right now.
+
 ## Stale-entry prune
 
 When a kubeconfig's contents change (credential rotation), its hash changes and the old state entry becomes orphaned. A `kcm prune` command would list and optionally remove state entries whose `path_hint` no longer points to a file with the matching hash.

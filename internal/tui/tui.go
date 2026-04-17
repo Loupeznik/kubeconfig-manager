@@ -25,6 +25,16 @@ const (
 	modeDetail
 	modeTagEdit
 	modeRename
+	modePalette
+)
+
+type paletteAction int
+
+const (
+	paletteBrowsing paletteAction = iota
+	paletteAdding
+	paletteRenaming
+	paletteDeleting
 )
 
 const (
@@ -41,8 +51,15 @@ type Model struct {
 	tagInput    textinput.Model
 	renameInput textinput.Model
 
+	paletteList       list.Model
+	paletteInput      textinput.Model
+	paletteAction     paletteAction
+	paletteDelete     string
+	paletteRenameFrom string
+	paletteUsage      map[string][]string
+
 	tagPicker     *tagPicker // non-nil when palette is populated
-	detailFile    *fileItem  // the file whose contexts are shown in ctxList
+	detailFile    *fileItem  // the file whose contexts are shown in ctxTable
 	targetContext string     // when non-empty, tag/alert actions apply per-context
 
 	width  int
@@ -82,8 +99,7 @@ func newModel(ctx context.Context, dir, version string, store state.Store) (Mode
 		return Model{}, err
 	}
 
-	l := newStyledList("kubeconfigs", items, listKeyBindings)
-	c := newStyledList("contexts", nil, detailKeyBindings)
+	l := newStyledList("kubeconfig", "kubeconfigs", items, listKeyBindings)
 
 	ti := textinput.New()
 	ti.Prompt = "> "
@@ -93,19 +109,41 @@ func newModel(ctx context.Context, dir, version string, store state.Store) (Mode
 	ri.Prompt = "> "
 	ri.CharLimit = 255
 
+	pi := textinput.New()
+	pi.Prompt = "> "
+	pi.CharLimit = 64
+	pi.Placeholder = "new tag name"
+
 	return Model{
-		mode:        modeList,
-		dir:         dir,
-		version:     version,
-		store:       store,
-		fileList:    l,
-		ctxList:     c,
-		tagInput:    ti,
-		renameInput: ri,
+		mode:         modeList,
+		dir:          dir,
+		version:      version,
+		store:        store,
+		fileList:     l,
+		ctxList:      newStyledList("context", "contexts", nil, ctxListKeyBindings),
+		paletteList:  newStyledList("tag", "tags", nil, paletteListKeyBindings),
+		paletteInput: pi,
+		tagInput:     ti,
+		renameInput:  ri,
 	}, nil
 }
 
-func newStyledList(label string, items []list.Item, extraKeys func() []key.Binding) list.Model {
+func paletteListKeyBindings() []key.Binding {
+	return []key.Binding{
+		key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new")),
+		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "rename")),
+		key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
+	}
+}
+
+func ctxListKeyBindings() []key.Binding {
+	return []key.Binding{
+		key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "tags")),
+		key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "alerts")),
+	}
+}
+
+func newStyledList(singular, plural string, items []list.Item, extraKeys func() []key.Binding) list.Model {
 	delegate := list.NewDefaultDelegate()
 	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.
 		Foreground(lipgloss.Color(colorAccent)).
@@ -119,11 +157,11 @@ func newStyledList(label string, items []list.Item, extraKeys func() []key.Bindi
 		Foreground(lipgloss.Color(colorMuted))
 
 	l := list.New(items, delegate, 0, 0)
-	l.Title = label
+	l.Title = plural
 	l.Styles.Title = listTitleStyle
 	l.SetShowStatusBar(true)
 	l.SetFilteringEnabled(true)
-	l.SetStatusBarItemName(label, label+"s")
+	l.SetStatusBarItemName(singular, plural)
 	l.AdditionalShortHelpKeys = extraKeys
 	l.AdditionalFullHelpKeys = extraKeys
 	return l
@@ -143,7 +181,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			innerHeight = 5
 		}
 		m.fileList.SetSize(msg.Width, innerHeight)
-		m.ctxList.SetSize(msg.Width, innerHeight)
+		// leave room for the detail header line
+		ctxHeight := innerHeight - 2
+		if ctxHeight < 5 {
+			ctxHeight = 5
+		}
+		m.ctxList.SetSize(msg.Width, ctxHeight)
+		m.paletteList.SetSize(msg.Width, innerHeight)
 		return m, nil
 
 	case tea.KeyMsg:
@@ -156,7 +200,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateTagEdit(msg)
 		case modeRename:
 			return m.updateRename(msg)
+		case modePalette:
+			return m.updatePalette(msg)
 		}
+
+	case paletteReloadMsg:
+		cfg, err := m.store.Load(context.Background())
+		if err != nil {
+			m.setErr("reload palette: " + err.Error())
+			return m, nil
+		}
+		cfg.EnsurePaletteFromEntries()
+		m.loadPaletteList(cfg)
+		if msg.status != "" {
+			m.setStatus(msg.status)
+		}
+		return m, nil
 
 	case reloadMsg:
 		items, err := loadFileItems(context.Background(), m.dir, m.store)
@@ -170,7 +229,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.detailFile != nil {
 				cfg, cerr := m.store.Load(context.Background())
 				if cerr == nil {
-					m.ctxList.SetItems(buildContextItems(m.detailFile, cfg.Entries[m.detailFile.hash]))
+					idx := m.ctxList.Index()
+					m.loadContextList(m.detailFile, cfg.Entries[m.detailFile.hash])
+					if idx < len(m.ctxList.Items()) {
+						m.ctxList.Select(idx)
+					}
 				}
 			}
 		}
@@ -190,6 +253,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tagInput, cmd = m.tagInput.Update(msg)
 	case modeRename:
 		m.renameInput, cmd = m.renameInput.Update(msg)
+	case modePalette:
+		if m.paletteAction == paletteAdding || m.paletteAction == paletteRenaming {
+			m.paletteInput, cmd = m.paletteInput.Update(msg)
+		} else {
+			m.paletteList, cmd = m.paletteList.Update(msg)
+		}
 	}
 	return m, cmd
 }
@@ -201,6 +270,8 @@ func (m Model) View() string {
 		body = m.fileList.View()
 	case modeDetail:
 		body = m.viewDetail()
+	case modePalette:
+		body = m.viewPalette()
 	case modeTagEdit:
 		return m.viewTagEdit()
 	case modeRename:
@@ -234,6 +305,7 @@ func (m Model) renderFooter() string {
 			renderKey("t", "tags"),
 			renderKey("a", "alerts"),
 			renderKey("r", "rename"),
+			renderKey("p", "palette"),
 			renderKey("/", "filter"),
 			renderKey("q", "quit"),
 		}, separatorStyle.Render(" · "))
@@ -244,6 +316,33 @@ func (m Model) renderFooter() string {
 			renderKey("esc", "back"),
 			renderKey("q", "quit"),
 		}, separatorStyle.Render(" · "))
+	case modePalette:
+		switch m.paletteAction {
+		case paletteAdding:
+			keys = strings.Join([]string{
+				renderKey("↵", "add"),
+				renderKey("esc", "cancel"),
+			}, separatorStyle.Render(" · "))
+		case paletteRenaming:
+			keys = strings.Join([]string{
+				renderKey("↵", "save"),
+				renderKey("esc", "cancel"),
+			}, separatorStyle.Render(" · "))
+		case paletteDeleting:
+			keys = strings.Join([]string{
+				renderKey("y", "confirm delete"),
+				renderKey("n/esc", "cancel"),
+			}, separatorStyle.Render(" · "))
+		default:
+			keys = strings.Join([]string{
+				renderKey("n", "new"),
+				renderKey("r", "rename"),
+				renderKey("d", "delete"),
+				renderKey("/", "filter"),
+				renderKey("esc", "back"),
+				renderKey("q", "quit"),
+			}, separatorStyle.Render(" · "))
+		}
 	}
 	status := ""
 	if m.status != "" {
@@ -320,6 +419,7 @@ func listKeyBindings() []key.Binding {
 		key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "tags")),
 		key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "alerts")),
 		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "rename")),
+		key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "palette")),
 	}
 }
 
@@ -353,9 +453,8 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !ok {
 			return m, nil
 		}
-		items := buildContextItems(&fi, fi.entry)
-		m.ctxList.SetItems(items)
 		m.detailFile = &fi
+		m.loadContextList(&fi, fi.entry)
 		m.mode = modeDetail
 		return m, nil
 	case "t":
@@ -390,6 +489,9 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			status = "alerts disabled (file-level)"
 		}
 		return m, reloadCmd(status)
+	case "p":
+		m.openPalette()
+		return m, nil
 	}
 
 	var cmd tea.Cmd
@@ -398,10 +500,301 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // ============================================================================
-// Detail view (interactive context list)
+// Palette management view
 // ============================================================================
 
-type contextItem struct {
+func (m *Model) openPalette() {
+	cfg, err := m.store.Load(context.Background())
+	if err != nil {
+		m.setErr("load state: " + err.Error())
+		return
+	}
+	cfg.EnsurePaletteFromEntries()
+	m.loadPaletteList(cfg)
+	m.paletteAction = paletteBrowsing
+	m.paletteDelete = ""
+	m.paletteRenameFrom = ""
+	m.paletteInput.SetValue("")
+	m.paletteInput.Blur()
+	// Size the palette list; the outer Update will re-size on next window event,
+	// but do a sensible fallback so the list shows something immediately.
+	if m.width > 0 && m.height > chromeHeight {
+		m.paletteList.SetSize(m.width, m.height-chromeHeight)
+	}
+	m.mode = modePalette
+}
+
+// paletteItem is a single tag row in the palette list.
+type paletteItem struct {
+	tag       string
+	locations []string // file / file-context locations where it's used
+}
+
+func (p paletteItem) Title() string {
+	return tagStyle.Render("●") + " " + p.tag
+}
+
+func (p paletteItem) Description() string {
+	if len(p.locations) == 0 {
+		return detailLabelStyle.Render("unused")
+	}
+	used := strings.Join(p.locations, ", ")
+	if len(used) > 80 {
+		used = used[:77] + "..."
+	}
+	return detailLabelStyle.Render(fmt.Sprintf("used in %d place(s): ", len(p.locations))) + detailValueStyle.Render(used)
+}
+
+func (p paletteItem) FilterValue() string { return p.tag }
+
+func (m *Model) loadPaletteList(cfg *state.Config) {
+	usage := tagUsage(cfg)
+	m.paletteUsage = usage
+
+	items := make([]list.Item, 0, len(cfg.AvailableTags))
+	for _, t := range cfg.AvailableTags {
+		items = append(items, paletteItem{
+			tag:       t,
+			locations: usage[t],
+		})
+	}
+	prevIndex := m.paletteList.Index()
+	m.paletteList.SetItems(items)
+	if prevIndex < len(items) {
+		m.paletteList.Select(prevIndex)
+	}
+}
+
+// tagUsage returns, for each tag, a sorted list of "file" or "file/context"
+// locations where it is referenced.
+func tagUsage(cfg *state.Config) map[string][]string {
+	out := map[string][]string{}
+	for _, entry := range cfg.Entries {
+		label := entry.PathHint
+		if label == "" {
+			label = "—"
+		}
+		for _, t := range entry.Tags {
+			out[t] = appendUnique(out[t], label)
+		}
+		for ctxName, ctxTags := range entry.ContextTags {
+			for _, t := range ctxTags {
+				out[t] = appendUnique(out[t], label+"/"+ctxName)
+			}
+		}
+	}
+	for k := range out {
+		sort.Strings(out[k])
+	}
+	return out
+}
+
+func appendUnique(xs []string, s string) []string {
+	for _, existing := range xs {
+		if existing == s {
+			return xs
+		}
+	}
+	return append(xs, s)
+}
+
+func (m Model) updatePalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch m.paletteAction {
+	case paletteAdding:
+		switch msg.String() {
+		case "esc", "ctrl+c":
+			m.paletteAction = paletteBrowsing
+			m.paletteInput.SetValue("")
+			m.paletteInput.Blur()
+			return m, nil
+		case "enter":
+			tag := strings.TrimSpace(m.paletteInput.Value())
+			m.paletteAction = paletteBrowsing
+			m.paletteInput.SetValue("")
+			m.paletteInput.Blur()
+			if tag == "" {
+				return m, nil
+			}
+			var added []string
+			err := m.store.Mutate(context.Background(), func(cfg *state.Config) error {
+				added = cfg.AddAvailableTags(tag)
+				return nil
+			})
+			if err != nil {
+				m.setErr("add tag: " + err.Error())
+				return m, nil
+			}
+			msg := "added to palette: " + tag
+			if len(added) == 0 {
+				msg = tag + " already in palette"
+			}
+			return m, m.paletteReload(msg)
+		}
+		var cmd tea.Cmd
+		m.paletteInput, cmd = m.paletteInput.Update(msg)
+		return m, cmd
+
+	case paletteRenaming:
+		switch msg.String() {
+		case "esc", "ctrl+c":
+			m.paletteAction = paletteBrowsing
+			m.paletteRenameFrom = ""
+			m.paletteInput.SetValue("")
+			m.paletteInput.Blur()
+			return m, nil
+		case "enter":
+			oldTag := m.paletteRenameFrom
+			newTag := strings.TrimSpace(m.paletteInput.Value())
+			m.paletteAction = paletteBrowsing
+			m.paletteRenameFrom = ""
+			m.paletteInput.SetValue("")
+			m.paletteInput.Blur()
+			if newTag == "" || newTag == oldTag {
+				return m, nil
+			}
+			err := m.store.Mutate(context.Background(), func(cfg *state.Config) error {
+				return cfg.RenameAvailableTag(oldTag, newTag)
+			})
+			if err != nil {
+				m.setErr("rename tag: " + err.Error())
+				return m, nil
+			}
+			return m, tea.Batch(m.paletteReload(fmt.Sprintf("renamed %s → %s", oldTag, newTag)), reloadCmd(""))
+		}
+		var cmd tea.Cmd
+		m.paletteInput, cmd = m.paletteInput.Update(msg)
+		return m, cmd
+
+	case paletteDeleting:
+		switch msg.String() {
+		case "y":
+			victim := m.paletteDelete
+			m.paletteAction = paletteBrowsing
+			m.paletteDelete = ""
+			if victim == "" {
+				return m, nil
+			}
+			var removed []string
+			err := m.store.Mutate(context.Background(), func(cfg *state.Config) error {
+				removed = cfg.RemoveAvailableTags(victim)
+				return nil
+			})
+			if err != nil {
+				m.setErr("delete tag: " + err.Error())
+				return m, nil
+			}
+			if len(removed) == 0 {
+				return m, m.paletteReload(victim + " was not in palette")
+			}
+			return m, tea.Batch(m.paletteReload("deleted and scrubbed: "+victim), reloadCmd(""))
+		case "n", "esc", "ctrl+c":
+			m.paletteAction = paletteBrowsing
+			m.paletteDelete = ""
+			return m, nil
+		}
+		return m, nil
+
+	default: // paletteBrowsing
+		if m.paletteList.FilterState() == list.Filtering {
+			var cmd tea.Cmd
+			m.paletteList, cmd = m.paletteList.Update(msg)
+			return m, cmd
+		}
+		switch msg.String() {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		case "esc":
+			m.mode = modeList
+			m.paletteAction = paletteBrowsing
+			m.paletteDelete = ""
+			m.paletteRenameFrom = ""
+			return m, nil
+		case "n":
+			m.paletteAction = paletteAdding
+			m.paletteInput.SetValue("")
+			m.paletteInput.Focus()
+			return m, nil
+		case "r":
+			tag := m.currentPaletteTag()
+			if tag == "" {
+				return m, nil
+			}
+			m.paletteAction = paletteRenaming
+			m.paletteRenameFrom = tag
+			m.paletteInput.SetValue(tag)
+			m.paletteInput.Focus()
+			return m, nil
+		case "d":
+			tag := m.currentPaletteTag()
+			if tag == "" {
+				return m, nil
+			}
+			m.paletteAction = paletteDeleting
+			m.paletteDelete = tag
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.paletteList, cmd = m.paletteList.Update(msg)
+		return m, cmd
+	}
+}
+
+func (m Model) currentPaletteTag() string {
+	if m.paletteList.SelectedItem() == nil {
+		return ""
+	}
+	pi, ok := m.paletteList.SelectedItem().(paletteItem)
+	if !ok {
+		return ""
+	}
+	return pi.tag
+}
+
+func (m Model) paletteReload(status string) tea.Cmd {
+	return func() tea.Msg { return paletteReloadMsg{status: status} }
+}
+
+type paletteReloadMsg struct {
+	status string
+}
+
+func (m Model) viewPalette() string {
+	title := detailHeaderStyle.Render("Tag palette")
+	header := title
+
+	body := m.paletteList.View()
+
+	switch m.paletteAction {
+	case paletteAdding:
+		body += "\n" + modalBorderStyle.Render(lipgloss.JoinVertical(lipgloss.Left,
+			detailLabelStyle.Render("New tag name:"),
+			m.paletteInput.View(),
+		))
+	case paletteRenaming:
+		body += "\n" + modalBorderStyle.Render(lipgloss.JoinVertical(lipgloss.Left,
+			detailLabelStyle.Render("Rename "+m.paletteRenameFrom+" to:"),
+			m.paletteInput.View(),
+			"",
+			dirHintStyle.Render("All usages across kubeconfigs and contexts will be updated."),
+		))
+	case paletteDeleting:
+		body += "\n" + modalBorderStyle.Render(lipgloss.JoinVertical(lipgloss.Left,
+			detailHeaderStyle.Render("Delete tag "+alertBadgeStyle.Render(m.paletteDelete)+"?"),
+			detailValueStyle.Render("This also removes it from every kubeconfig and context that uses it."),
+		))
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, header, body)
+}
+
+// ============================================================================
+// Detail view (interactive context table)
+// ============================================================================
+
+// contextRow is the in-memory representation of a row in the detail table.
+// Kept aligned with the table's Rows slice so keybindings can look up the
+// per-context data by cursor index.
+type contextRow struct {
 	name       string
 	cluster    string
 	user       string
@@ -413,42 +806,24 @@ type contextItem struct {
 	fileAlerts state.Alerts
 }
 
-func (i contextItem) Title() string {
-	if i.isCurrent {
-		return currentContextStyle.Render("→ ") + i.name
-	}
-	return "  " + i.name
-}
+func (r contextRow) effectiveTags() []string { return mergeTags(r.fileTags, r.ctxTags) }
 
-func (i contextItem) Description() string {
-	var parts []string
-	parts = append(parts, detailLabelStyle.Render("cluster:")+" "+detailValueStyle.Render(i.cluster))
-	parts = append(parts, detailLabelStyle.Render("user:")+" "+detailValueStyle.Render(i.user))
-	if i.namespace != "" {
-		parts = append(parts, detailLabelStyle.Render("ns:")+" "+detailValueStyle.Render(i.namespace))
+// alertIndicator returns the badge for the effective alert state, or "" when
+// there's nothing to show (no file-level alerts and no override).
+func (r contextRow) alertIndicator() string {
+	if r.ctxAlerts.Enabled {
+		return alertBadgeStyle.Render("⚠ ctx alerts")
 	}
-
-	effectiveTags := mergeTags(i.fileTags, i.ctxTags)
-	if len(effectiveTags) > 0 {
-		parts = append(parts, contextTagStyle.Render(renderTagBadges(effectiveTags)))
+	if r.fileAlerts.Enabled && !isContextAlertsExplicitlyDisabled(r.ctxAlerts) {
+		return alertBadgeStyle.Render("⚠ file alerts")
 	}
-
-	// Alert marker: context-level wins over file-level.
-	if i.ctxAlerts.Enabled {
-		parts = append(parts, alertBadgeStyle.Render("⚠ ctx alerts"))
-	} else if i.fileAlerts.Enabled && !isContextAlertsExplicitlyDisabled(i.ctxAlerts) {
-		parts = append(parts, alertBadgeStyle.Render("⚠ file alerts"))
+	if isContextAlertsExplicitlyDisabled(r.ctxAlerts) {
+		return detailLabelStyle.Render("alerts off (override)")
 	}
-	return strings.Join(parts, "  ")
-}
-
-func (i contextItem) FilterValue() string {
-	return i.name + " " + strings.Join(i.ctxTags, " ")
+	return ""
 }
 
 func isContextAlertsExplicitlyDisabled(a state.Alerts) bool {
-	// The zero Alerts is "no override". Only treat as explicit disable if
-	// any field diverges from zero AND Enabled is false.
 	return !a.Enabled && (a.RequireConfirmation || a.ConfirmClusterName || len(a.BlockedVerbs) > 0)
 }
 
@@ -470,23 +845,66 @@ func mergeTags(file, ctx []string) []string {
 	return out
 }
 
-func detailKeyBindings() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "tags")),
-		key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "alerts")),
-		key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
-	}
+// ContextItem is a single context rendered in the detail list. Matches the
+// main file list's title/description layout for visual consistency.
+type contextItem struct {
+	row contextRow
 }
 
-func (m Model) currentContextItem() (contextItem, bool) {
+func (i contextItem) Title() string {
+	if i.row.isCurrent {
+		return currentContextStyle.Render("●") + " " + i.row.name
+	}
+	return "  " + i.row.name
+}
+
+func (i contextItem) Description() string {
+	sep := separatorStyle.Render(" · ")
+	var parts []string
+	if i.row.cluster != "" {
+		parts = append(parts, detailValueStyle.Render(i.row.cluster))
+	}
+	if i.row.user != "" {
+		parts = append(parts, detailValueStyle.Render(i.row.user))
+	}
+	if i.row.namespace != "" {
+		parts = append(parts, detailValueStyle.Render(i.row.namespace))
+	}
+	if eff := i.row.effectiveTags(); len(eff) > 0 {
+		parts = append(parts, tagStyle.Render(renderTagBadges(eff)))
+	}
+	if badge := i.row.alertIndicator(); badge != "" {
+		parts = append(parts, badge)
+	}
+	return strings.Join(parts, sep)
+}
+
+func (i contextItem) FilterValue() string {
+	return i.row.name + " " + strings.Join(i.row.ctxTags, " ")
+}
+
+func (m *Model) loadContextList(fi *fileItem, entry state.Entry) {
+	rows := buildContextRows(fi, entry)
+	items := make([]list.Item, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, contextItem{row: r})
+	}
+	m.ctxList.SetItems(items)
+}
+
+func (m Model) currentContextRow() (contextRow, bool) {
 	if m.ctxList.SelectedItem() == nil {
-		return contextItem{}, false
+		return contextRow{}, false
 	}
 	ci, ok := m.ctxList.SelectedItem().(contextItem)
-	return ci, ok
+	if !ok {
+		return contextRow{}, false
+	}
+	return ci.row, true
 }
 
 func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Let the list handle keys while actively filtering.
 	if m.ctxList.FilterState() == list.Filtering {
 		var cmd tea.Cmd
 		m.ctxList, cmd = m.ctxList.Update(msg)
@@ -502,27 +920,27 @@ func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.targetContext = ""
 		return m, nil
 	case "t":
-		ci, ok := m.currentContextItem()
+		r, ok := m.currentContextRow()
 		if !ok || m.detailFile == nil {
 			return m, nil
 		}
-		m.targetContext = ci.name
-		m.openTagEditor(ci.ctxTags)
+		m.targetContext = r.name
+		m.openTagEditor(r.ctxTags)
 		return m, nil
 	case "a":
-		ci, ok := m.currentContextItem()
+		r, ok := m.currentContextRow()
 		if !ok || m.detailFile == nil {
 			return m, nil
 		}
 		entry := m.detailFile.entry
-		wasEnabled := entry.ResolveAlerts(ci.name).Enabled
-		if err := toggleAlert(m.store, m.detailFile.hash, filepath.Base(m.detailFile.path), ci.name); err != nil {
+		wasEnabled := entry.ResolveAlerts(r.name).Enabled
+		if err := toggleAlert(m.store, m.detailFile.hash, filepath.Base(m.detailFile.path), r.name); err != nil {
 			m.setErr(err.Error())
 			return m, nil
 		}
-		status := fmt.Sprintf("alerts enabled for context %s", ci.name)
+		status := fmt.Sprintf("alerts enabled for context %s", r.name)
 		if wasEnabled {
-			status = fmt.Sprintf("alerts disabled for context %s", ci.name)
+			status = fmt.Sprintf("alerts disabled for context %s", r.name)
 		}
 		return m, reloadCmd(status)
 	}
@@ -536,17 +954,25 @@ func (m Model) viewDetail() string {
 	if m.detailFile == nil {
 		return lipgloss.NewStyle().Padding(1, 2).Render("(no selection)")
 	}
-	header := detailHeaderStyle.Render(m.detailFile.file.Name())
+
+	var headerParts []string
+	headerParts = append(headerParts, detailHeaderStyle.Render(m.detailFile.file.Name()))
 	if c := m.detailFile.file.Config.CurrentContext; c != "" {
-		header += "  " + currentContextStyle.Render("current: "+c)
+		headerParts = append(headerParts,
+			detailLabelStyle.Render("current: ")+currentContextStyle.Render(c))
 	}
 	if len(m.detailFile.entry.Tags) > 0 {
-		header += "  " + tagStyle.Render(renderTagBadges(m.detailFile.entry.Tags))
+		headerParts = append(headerParts, tagStyle.Render(renderTagBadges(m.detailFile.entry.Tags)))
 	}
 	if m.detailFile.entry.Alerts.Enabled {
-		header += "  " + alertBadgeStyle.Render("⚠ FILE ALERTS")
+		headerParts = append(headerParts, alertBadgeStyle.Render("⚠ FILE ALERTS"))
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, header, m.ctxList.View())
+	header := strings.Join(headerParts, separatorStyle.Render(" · "))
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		m.ctxList.View(),
+	)
 }
 
 // ============================================================================
@@ -791,14 +1217,14 @@ func refindFile(items []list.Item, hash string) *fileItem {
 	return nil
 }
 
-func buildContextItems(fi *fileItem, entry state.Entry) []list.Item {
+func buildContextRows(fi *fileItem, entry state.Entry) []contextRow {
 	names := make([]string, 0, len(fi.file.Config.Contexts))
 	for n := range fi.file.Config.Contexts {
 		names = append(names, n)
 	}
 	sort.Strings(names)
 
-	out := make([]list.Item, 0, len(names))
+	out := make([]contextRow, 0, len(names))
 	for _, n := range names {
 		ctx := fi.file.Config.Contexts[n]
 		var cluster, user, ns string
@@ -815,7 +1241,7 @@ func buildContextItems(fi *fileItem, entry state.Entry) []list.Item {
 		if entry.ContextAlerts != nil {
 			ctxAlerts = entry.ContextAlerts[n]
 		}
-		out = append(out, contextItem{
+		out = append(out, contextRow{
 			name:       n,
 			cluster:    cluster,
 			user:       user,

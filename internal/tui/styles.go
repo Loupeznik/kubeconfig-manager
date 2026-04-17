@@ -73,10 +73,6 @@ var (
 			Foreground(lipgloss.Color(colorSuccess)).
 			Bold(true)
 
-	contextTagStyle = renderer.NewStyle().
-			Foreground(lipgloss.Color(colorTeal)).
-			Bold(true)
-
 	alertBadgeStyle = renderer.NewStyle().
 			Foreground(lipgloss.Color(colorDanger)).
 			Bold(true)
