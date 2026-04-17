@@ -3,10 +3,12 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
+	"github.com/loupeznik/kubeconfig-manager/internal/guard"
 	"github.com/loupeznik/kubeconfig-manager/internal/kubeconfig"
 	"github.com/loupeznik/kubeconfig-manager/internal/shell"
 	"github.com/loupeznik/kubeconfig-manager/internal/state"
@@ -84,7 +86,26 @@ func newKubectlCmd() *cobra.Command {
 		Use:                "kubectl [args...]",
 		Short:              "Run kubectl through the destructive-action guard",
 		DisableFlagParsing: true,
-		RunE:               func(cmd *cobra.Command, args []string) error { return errNotImplemented },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, err := state.DefaultStore()
+			if err != nil {
+				return err
+			}
+			decision, err := guard.Evaluate(cmd.Context(), store, os.Getenv("KUBECONFIG"), args)
+			if err != nil {
+				return err
+			}
+			if decision.Alert() {
+				if err := guard.Confirm(decision); err != nil {
+					if errors.Is(err, guard.ErrDeclined) {
+						_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "aborted")
+						os.Exit(1)
+					}
+					return err
+				}
+			}
+			return guard.Exec(args)
+		},
 	}
 	return cmd
 }
