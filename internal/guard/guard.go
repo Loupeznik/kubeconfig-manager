@@ -85,11 +85,11 @@ func Evaluate(ctx context.Context, store state.Store, kubeconfigEnv string, args
 	argContext := ExtractContext(args)
 
 	for _, p := range paths {
-		hash, err := kubeconfig.HashFile(p)
+		id, err := kubeconfig.IdentifyFile(p)
 		if err != nil {
 			continue
 		}
-		entry, ok := cfg.Entries[hash]
+		entry, ok := cfg.GetEntry(id.StableHash, id.ContentHash)
 		if !ok {
 			continue
 		}
@@ -119,7 +119,7 @@ func Evaluate(ctx context.Context, store state.Store, kubeconfigEnv string, args
 
 		d.Triggers = append(d.Triggers, Trigger{
 			Path:         p,
-			Hash:         hash,
+			Hash:         id.StableHash,
 			Entry:        entry,
 			ContextName:  activeContext,
 			ClusterName:  clusterName,

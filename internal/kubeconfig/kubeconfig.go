@@ -120,7 +120,88 @@ func DefaultPath() (string, error) {
 
 var ErrNotFound = errors.New("kubeconfig not found")
 
+// Identity is the pair of hashes that can key a kubeconfig in state.
+// StableHash is the canonical identifier — built from the file's logical
+// topology (clusters, users, contexts) so it survives kctx/kubens/credential
+// rotations that rewrite the underlying bytes. ContentHash is the legacy
+// byte-hash used by pre-v0.9 state files; it's retained so existing entries
+// can be found and migrated to the stable key on first access.
+type Identity struct {
+	StableHash  string
+	ContentHash string
+}
+
+// IdentifyFile computes both hashes for a kubeconfig. Call once per file
+// access; pass StableHash/ContentHash to state lookups.
+func IdentifyFile(path string) (Identity, error) {
+	stable, err := StableHashFile(path)
+	if err != nil {
+		return Identity{}, err
+	}
+	content, err := ContentHashFile(path)
+	if err != nil {
+		return Identity{}, err
+	}
+	return Identity{StableHash: stable, ContentHash: content}, nil
+}
+
+// HashFile returns the stable fingerprint of the kubeconfig at path. This is
+// the canonical key for state entries.
+//
+// Equivalent to StableHashFile; kept for caller compatibility.
 func HashFile(path string) (string, error) {
+	return StableHashFile(path)
+}
+
+// StableHashFile parses the kubeconfig and returns a hash of its logical
+// topology (cluster names + servers, user names, context name/cluster/user
+// tuples). Stable across:
+//   - current-context changes (kubectx / kubectl config use-context)
+//   - namespace defaults (kubens / kubectl config set-context --namespace)
+//   - credential rotation (new tokens/certs in place)
+//   - whitespace/comment/formatting changes
+//
+// Changes when the set of contexts, clusters, users, or a cluster's server
+// URL changes — i.e. real topology shifts.
+func StableHashFile(path string) (string, error) {
+	cfg, err := clientcmd.LoadFromFile(path)
+	if err != nil {
+		return "", fmt.Errorf("hash %s: %w", path, err)
+	}
+	return StableFingerprint(cfg), nil
+}
+
+// StableFingerprint canonicalizes the kubeconfig into a sorted line-based
+// representation and hashes that with SHA-256.
+func StableFingerprint(cfg *clientcmdapi.Config) string {
+	lines := make([]string, 0, len(cfg.Clusters)+len(cfg.AuthInfos)+len(cfg.Contexts))
+	for name, c := range cfg.Clusters {
+		server := ""
+		if c != nil {
+			server = c.Server
+		}
+		lines = append(lines, "cluster\t"+name+"\t"+server)
+	}
+	for name := range cfg.AuthInfos {
+		lines = append(lines, "user\t"+name)
+	}
+	for name, c := range cfg.Contexts {
+		var cluster, authInfo string
+		if c != nil {
+			cluster = c.Cluster
+			authInfo = c.AuthInfo
+		}
+		lines = append(lines, "context\t"+name+"\t"+cluster+"\t"+authInfo)
+	}
+	sort.Strings(lines)
+	h := sha256.Sum256([]byte(strings.Join(lines, "\n")))
+	return "sha256:" + hex.EncodeToString(h[:])
+}
+
+// ContentHashFile returns the SHA-256 of the raw file bytes. Pre-stable-hash
+// state entries were keyed by this value; retained so they can be migrated
+// on first lookup.
+func ContentHashFile(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", fmt.Errorf("hash %s: %w", path, err)

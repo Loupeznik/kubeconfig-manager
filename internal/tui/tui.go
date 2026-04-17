@@ -225,12 +225,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.fileList.SetItems(items)
 		if m.detailFile != nil {
-			m.detailFile = refindFile(items, m.detailFile.hash)
+			m.detailFile = refindFile(items, m.detailFile.identity.StableHash)
 			if m.detailFile != nil {
 				cfg, cerr := m.store.Load(context.Background())
 				if cerr == nil {
+					entry, _ := cfg.GetEntry(m.detailFile.identity.StableHash, m.detailFile.identity.ContentHash)
 					idx := m.ctxList.Index()
-					m.loadContextList(m.detailFile, cfg.Entries[m.detailFile.hash])
+					m.loadContextList(m.detailFile, entry)
 					if idx < len(m.ctxList.Items()) {
 						m.ctxList.Select(idx)
 					}
@@ -363,10 +364,10 @@ func (m *Model) setErr(s string)    { m.status = s; m.stErr = true }
 // ============================================================================
 
 type fileItem struct {
-	path  string
-	file  *kubeconfig.File
-	entry state.Entry
-	hash  string
+	path     string
+	file     *kubeconfig.File
+	entry    state.Entry
+	identity kubeconfig.Identity
 }
 
 func (i fileItem) Title() string { return i.file.Name() }
@@ -480,7 +481,7 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		wasEnabled := fi.entry.Alerts.Enabled
-		if err := toggleAlert(m.store, fi.hash, filepath.Base(fi.path), ""); err != nil {
+		if err := toggleAlert(m.store, fi.identity, filepath.Base(fi.path), ""); err != nil {
 			m.setErr(err.Error())
 			return m, nil
 		}
@@ -945,7 +946,7 @@ func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		entry := m.detailFile.entry
 		wasEnabled := entry.ResolveAlerts(r.name).Enabled
-		if err := toggleAlert(m.store, m.detailFile.hash, filepath.Base(m.detailFile.path), r.name); err != nil {
+		if err := toggleAlert(m.store, m.detailFile.identity, filepath.Base(m.detailFile.path), r.name); err != nil {
 			m.setErr(err.Error())
 			return m, nil
 		}
@@ -1026,7 +1027,7 @@ func (m Model) saveTagsAndReturn(newTags []string) (tea.Model, tea.Cmd) {
 		m.mode = m.returnModeFromModal()
 		return m, nil
 	}
-	if err := setTags(m.store, fi.hash, filepath.Base(fi.path), m.targetContext, newTags); err != nil {
+	if err := setTags(m.store, fi.identity, filepath.Base(fi.path), m.targetContext, newTags); err != nil {
 		m.setErr(err.Error())
 		m.tagPicker = nil
 		m.mode = m.returnModeFromModal()
@@ -1143,7 +1144,7 @@ func (m Model) updateRename(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeList
 			return m, nil
 		}
-		if err := rebindPathHint(m.store, fi.hash, filepath.Base(newPath)); err != nil {
+		if err := rebindPathHint(m.store, fi.identity, filepath.Base(newPath)); err != nil {
 			m.setErr("rename ok but state update failed: " + err.Error())
 			m.mode = modeList
 			return m, reloadCmd("")
@@ -1203,24 +1204,25 @@ func loadFileItems(ctx context.Context, dir string, store state.Store) ([]list.I
 
 	items := make([]list.Item, 0, len(scan.Files))
 	for _, f := range scan.Files {
-		hash, err := kubeconfig.HashFile(f.Path)
+		id, err := kubeconfig.IdentifyFile(f.Path)
 		if err != nil {
 			return nil, err
 		}
+		entry, _ := cfg.GetEntry(id.StableHash, id.ContentHash)
 		items = append(items, fileItem{
-			path:  f.Path,
-			file:  f,
-			entry: cfg.Entries[hash],
-			hash:  hash,
+			path:     f.Path,
+			file:     f,
+			entry:    entry,
+			identity: id,
 		})
 	}
 	return items, nil
 }
 
-func refindFile(items []list.Item, hash string) *fileItem {
+func refindFile(items []list.Item, stableHash string) *fileItem {
 	for _, it := range items {
 		fi, ok := it.(fileItem)
-		if ok && fi.hash == hash {
+		if ok && fi.identity.StableHash == stableHash {
 			copy := fi
 			return &copy
 		}
@@ -1280,9 +1282,9 @@ func splitTags(s string) []string {
 
 // toggleAlert flips alerts for the file (contextName == "") or for a specific
 // context within the file.
-func toggleAlert(store state.Store, hash, pathHint, contextName string) error {
+func toggleAlert(store state.Store, id kubeconfig.Identity, pathHint, contextName string) error {
 	return store.Mutate(context.Background(), func(cfg *state.Config) error {
-		entry := cfg.Entries[hash]
+		entry := cfg.TakeEntry(id.StableHash, id.ContentHash)
 		entry.PathHint = pathHint
 		if contextName == "" {
 			entry.Alerts.Enabled = !entry.Alerts.Enabled
@@ -1311,16 +1313,16 @@ func toggleAlert(store state.Store, hash, pathHint, contextName string) error {
 			entry.ContextAlerts[contextName] = a
 		}
 		entry.Touch()
-		cfg.Entries[hash] = entry
+		cfg.Entries[id.StableHash] = entry
 		return nil
 	})
 }
 
 // setTags replaces tags at the file level (contextName == "") or for a specific
 // context within the file.
-func setTags(store state.Store, hash, pathHint, contextName string, tags []string) error {
+func setTags(store state.Store, id kubeconfig.Identity, pathHint, contextName string, tags []string) error {
 	return store.Mutate(context.Background(), func(cfg *state.Config) error {
-		entry := cfg.Entries[hash]
+		entry := cfg.TakeEntry(id.StableHash, id.ContentHash)
 		entry.PathHint = pathHint
 		if contextName == "" {
 			entry.Tags = tags
@@ -1335,20 +1337,21 @@ func setTags(store state.Store, hash, pathHint, contextName string, tags []strin
 			}
 		}
 		entry.Touch()
-		cfg.Entries[hash] = entry
+		cfg.Entries[id.StableHash] = entry
 		return nil
 	})
 }
 
-func rebindPathHint(store state.Store, hash, newHint string) error {
+func rebindPathHint(store state.Store, id kubeconfig.Identity, newHint string) error {
 	return store.Mutate(context.Background(), func(cfg *state.Config) error {
-		entry, ok := cfg.Entries[hash]
+		entry, ok := cfg.GetEntry(id.StableHash, id.ContentHash)
 		if !ok {
 			return nil
 		}
+		entry = cfg.TakeEntry(id.StableHash, id.ContentHash)
 		entry.PathHint = newHint
 		entry.Touch()
-		cfg.Entries[hash] = entry
+		cfg.Entries[id.StableHash] = entry
 		return nil
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/loupeznik/kubeconfig-manager/internal/kubeconfig"
@@ -161,8 +162,13 @@ func TestEvaluateDefaultBlockedVerbsWhenEmpty(t *testing.T) {
 func TestEvaluateMultiPathKubeconfig(t *testing.T) {
 	dir := t.TempDir()
 	path1 := writeKubeconfig(t, dir, "prod.yaml")
+	// path2 has a different cluster server URL so its stable fingerprint
+	// differs from path1's — otherwise stable-hash keying treats two files
+	// with the same logical topology as the same kubeconfig.
 	path2 := filepath.Join(dir, "other.yaml")
-	otherKubeconfig := sampleKubeconfig + "# distinct content for different hash\n"
+	otherKubeconfig := strings.Replace(sampleKubeconfig,
+		"server: https://prod.example.test",
+		"server: https://other.example.test", 1)
 	if err := os.WriteFile(path2, []byte(otherKubeconfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +186,7 @@ func TestEvaluateMultiPathKubeconfig(t *testing.T) {
 		t.Error("expected alert from first path")
 	}
 	if len(d.Triggers) != 1 {
-		t.Errorf("triggers: got %d, want 1 (path2 has distinct content; no entry seeded)", len(d.Triggers))
+		t.Errorf("triggers: got %d, want 1 (path2 has distinct topology; no entry seeded)", len(d.Triggers))
 	}
 	if d.Triggers[0].Path != path1 {
 		t.Errorf("trigger path: got %q, want %q", d.Triggers[0].Path, path1)

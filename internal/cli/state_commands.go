@@ -105,11 +105,11 @@ func newTagCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				hash, err := kubeconfig.HashFile(path)
+				id, err := kubeconfig.IdentifyFile(path)
 				if err != nil {
 					return err
 				}
-				entry := cfg.Entries[hash]
+				entry, _ := cfg.GetEntry(id.StableHash, id.ContentHash)
 				if contextName != "" {
 					tags := entry.ResolveTags(contextName)
 					if len(tags) == 0 {
@@ -130,11 +130,11 @@ func newTagCmd() *cobra.Command {
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			_, _ = fmt.Fprintln(tw, "FILE\tSCOPE\tTAGS")
 			for _, f := range result.Files {
-				hash, err := kubeconfig.HashFile(f.Path)
+				id, err := kubeconfig.IdentifyFile(f.Path)
 				if err != nil {
 					return err
 				}
-				entry := cfg.Entries[hash]
+				entry, _ := cfg.GetEntry(id.StableHash, id.ContentHash)
 				fileTags := "-"
 				if len(entry.Tags) > 0 {
 					fileTags = strings.Join(entry.Tags, ", ")
@@ -392,7 +392,7 @@ func newAlertCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			hash, err := kubeconfig.HashFile(path)
+			id, err := kubeconfig.IdentifyFile(path)
 			if err != nil {
 				return err
 			}
@@ -404,7 +404,7 @@ func newAlertCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			entry := cfg.Entries[hash]
+			entry, _ := cfg.GetEntry(id.StableHash, id.ContentHash)
 			out := cmd.OutOrStdout()
 			_, _ = fmt.Fprintf(out, "File: %s\n", path)
 
@@ -488,7 +488,7 @@ func newRenameCmd() *cobra.Command {
 				return fmt.Errorf("destination %s already exists (pass --force to overwrite)", newPath)
 			}
 
-			hash, err := kubeconfig.HashFile(oldPath)
+			id, err := kubeconfig.IdentifyFile(oldPath)
 			if err != nil {
 				return err
 			}
@@ -501,13 +501,14 @@ func newRenameCmd() *cobra.Command {
 				return err
 			}
 			if err := store.Mutate(cmd.Context(), func(cfg *state.Config) error {
-				entry, ok := cfg.Entries[hash]
+				entry, ok := cfg.GetEntry(id.StableHash, id.ContentHash)
 				if !ok {
 					return nil
 				}
+				entry = cfg.TakeEntry(id.StableHash, id.ContentHash)
 				entry.PathHint = filepath.Base(newPath)
 				entry.Touch()
-				cfg.Entries[hash] = entry
+				cfg.Entries[id.StableHash] = entry
 				return nil
 			}); err != nil {
 				return fmt.Errorf("rename file succeeded but state update failed: %w", err)
@@ -531,7 +532,7 @@ func mutateEntry(cmd *cobra.Command, nameOrPath, dir string, fn func(path string
 	if err != nil {
 		return err
 	}
-	hash, err := kubeconfig.HashFile(path)
+	id, err := kubeconfig.IdentifyFile(path)
 	if err != nil {
 		return err
 	}
@@ -540,13 +541,13 @@ func mutateEntry(cmd *cobra.Command, nameOrPath, dir string, fn func(path string
 		return err
 	}
 	return store.Mutate(cmd.Context(), func(cfg *state.Config) error {
-		entry := cfg.Entries[hash]
+		entry := cfg.TakeEntry(id.StableHash, id.ContentHash)
 		entry.PathHint = filepath.Base(path)
 		if err := fn(path, &entry); err != nil {
 			return err
 		}
 		entry.Touch()
-		cfg.Entries[hash] = entry
+		cfg.Entries[id.StableHash] = entry
 		return nil
 	})
 }

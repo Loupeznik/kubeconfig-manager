@@ -197,6 +197,38 @@ func (c *Config) RemoveAvailableTags(tags ...string) (removed []string) {
 	return removed
 }
 
+// GetEntry finds an entry by its stable key. If not found, falls back to
+// the legacy (content-hash) key as a read-only migration aid. Returns the
+// zero Entry and false if neither key is present. Does not mutate the map.
+func (c *Config) GetEntry(stableKey, legacyKey string) (Entry, bool) {
+	if e, ok := c.Entries[stableKey]; ok {
+		return e, true
+	}
+	if legacyKey != "" && legacyKey != stableKey {
+		if e, ok := c.Entries[legacyKey]; ok {
+			return e, true
+		}
+	}
+	return Entry{}, false
+}
+
+// TakeEntry returns the entry for the given file identity, transparently
+// migrating legacy-keyed entries to the stable key. Call inside a Mutate
+// callback before making changes; the caller is expected to write the
+// returned entry back under stableKey.
+func (c *Config) TakeEntry(stableKey, legacyKey string) Entry {
+	if e, ok := c.Entries[stableKey]; ok {
+		return e
+	}
+	if legacyKey != "" && legacyKey != stableKey {
+		if e, ok := c.Entries[legacyKey]; ok {
+			delete(c.Entries, legacyKey)
+			return e
+		}
+	}
+	return Entry{}
+}
+
 // RenameAvailableTag renames a palette tag and updates every entry that
 // references the old name (both file-level and per-context). Returns an error
 // if the new name is empty, already present, or the old name is not found.

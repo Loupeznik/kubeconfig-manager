@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -184,6 +185,76 @@ func TestResolvePathNotFound(t *testing.T) {
 	_, err = ResolvePath("/tmp/definitely/does/not/exist/config.yaml", dir)
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("got err %v, want ErrNotFound", err)
+	}
+}
+
+func TestStableHashIgnoresCurrentContext(t *testing.T) {
+	dir := t.TempDir()
+	p1 := writeFile(t, dir, "a.yaml", validKubeconfig)
+	// Same logical topology, different current-context field.
+	swapped := `apiVersion: v1
+kind: Config
+current-context: staging
+clusters:
+  - name: prod-cluster
+    cluster:
+      server: https://prod.example.com
+  - name: staging-cluster
+    cluster:
+      server: https://staging.example.com
+contexts:
+  - name: prod
+    context:
+      cluster: prod-cluster
+      user: prod-user
+      namespace: default
+  - name: staging
+    context:
+      cluster: staging-cluster
+      user: staging-user
+users:
+  - name: prod-user
+    user:
+      token: rotated
+  - name: staging-user
+    user:
+      token: also-rotated
+`
+	p2 := writeFile(t, dir, "b.yaml", swapped)
+
+	h1, err := StableHashFile(p1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2, err := StableHashFile(p2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h1 != h2 {
+		t.Errorf("stable hash must survive current-context + credential changes; got %s vs %s", h1, h2)
+	}
+
+	// Sanity: content hash should differ (bytes are different).
+	c1, _ := ContentHashFile(p1)
+	c2, _ := ContentHashFile(p2)
+	if c1 == c2 {
+		t.Error("content hashes unexpectedly matched; test fixture problem")
+	}
+}
+
+func TestStableHashChangesOnTopologyChange(t *testing.T) {
+	dir := t.TempDir()
+	p1 := writeFile(t, dir, "a.yaml", validKubeconfig)
+	// Different cluster server URL → different topology.
+	changed := strings.Replace(validKubeconfig,
+		"server: https://prod.example.com",
+		"server: https://new.example.com", 1)
+	p2 := writeFile(t, dir, "b.yaml", changed)
+
+	h1, _ := StableHashFile(p1)
+	h2, _ := StableHashFile(p2)
+	if h1 == h2 {
+		t.Error("stable hash should change when cluster server URL changes")
 	}
 }
 

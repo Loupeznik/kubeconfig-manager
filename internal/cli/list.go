@@ -43,11 +43,11 @@ func newListCmd() *cobra.Command {
 				if current == "" {
 					current = "-"
 				}
-				hash, err := kubeconfig.HashFile(f.Path)
+				id, err := kubeconfig.IdentifyFile(f.Path)
 				if err != nil {
 					return err
 				}
-				entry := cfg.Entries[hash]
+				entry, _ := cfg.GetEntry(id.StableHash, id.ContentHash)
 				tags := "-"
 				if len(entry.Tags) > 0 {
 					tags = strings.Join(entry.Tags, ",")
