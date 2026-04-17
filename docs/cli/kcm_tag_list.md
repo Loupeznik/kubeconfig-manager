@@ -1,6 +1,6 @@
 ## kcm tag list
 
-List tags for one kubeconfig or all kubeconfigs in the directory
+List tags for one kubeconfig (with per-context rows) or all kubeconfigs
 
 ```
 kcm tag list [file] [flags]
@@ -9,11 +9,12 @@ kcm tag list [file] [flags]
 ### Options
 
 ```
-      --dir string   Kubeconfig directory (default: ~/.kube)
-  -h, --help         help for list
+      --context string   Apply to this context only (default: file-level)
+      --dir string       Kubeconfig directory (default: ~/.kube)
+  -h, --help             help for list
 ```
 
 ### SEE ALSO
 
-* [kcm tag](kcm_tag.md)	 - Manage tags on kubeconfig files
+* [kcm tag](kcm_tag.md)	 - Manage tags on kubeconfig files or individual contexts
 

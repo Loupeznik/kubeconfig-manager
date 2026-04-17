@@ -2,7 +2,7 @@
 .TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
 
 .SH NAME
-kcm-tag-remove - Remove tags from a kubeconfig
+kcm-tag-remove - Remove tags (file-level, or --context for one context only)
 
 
 .SH SYNOPSIS
@@ -10,10 +10,14 @@ kcm-tag-remove - Remove tags from a kubeconfig
 
 
 .SH DESCRIPTION
-Remove tags from a kubeconfig
+Remove tags (file-level, or --context for one context only)
 
 
 .SH OPTIONS
+\fB--context\fP=""
+	Apply to this context only (default: file-level)
+
+.PP
 \fB--dir\fP=""
 	Kubeconfig directory (default: ~/.kube)
 

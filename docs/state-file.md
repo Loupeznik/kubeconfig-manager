@@ -12,6 +12,13 @@ File mode is `0o600` on unix. Writes are atomic (temp + rename) and serialized v
 ```yaml
 version: 1
 kubeconfig_dir: /home/you/.kube           # optional; informational
+available_tags:                           # global tag palette (allow-list for tag assignment)
+  - prod
+  - staging
+  - dev
+  - eu
+  - us
+  - critical
 entries:
   sha256:9f04fe2c...:                     # key = SHA-256 of the kubeconfig file's bytes
     path_hint: prod.yaml                  # last-known filename, informational

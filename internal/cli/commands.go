@@ -96,7 +96,7 @@ func newTUICmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			selected, err := tui.Run(cmd.Context(), resolvedDir, store)
+			selected, err := tui.Run(cmd.Context(), resolvedDir, Version, store)
 			if err != nil {
 				return err
 			}

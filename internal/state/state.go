@@ -21,12 +21,13 @@ const (
 )
 
 type Entry struct {
-	PathHint      string            `yaml:"path_hint,omitempty"`
-	DisplayName   string            `yaml:"display_name,omitempty"`
-	Tags          []string          `yaml:"tags,omitempty"`
-	Alerts        Alerts            `yaml:"alerts,omitempty"`
-	ContextAlerts map[string]Alerts `yaml:"context_alerts,omitempty"`
-	UpdatedAt     time.Time         `yaml:"updated_at"`
+	PathHint      string              `yaml:"path_hint,omitempty"`
+	DisplayName   string              `yaml:"display_name,omitempty"`
+	Tags          []string            `yaml:"tags,omitempty"`
+	Alerts        Alerts              `yaml:"alerts,omitempty"`
+	ContextAlerts map[string]Alerts   `yaml:"context_alerts,omitempty"`
+	ContextTags   map[string][]string `yaml:"context_tags,omitempty"`
+	UpdatedAt     time.Time           `yaml:"updated_at"`
 }
 
 type Alerts struct {
@@ -48,9 +49,82 @@ func (e Entry) ResolveAlerts(contextName string) Alerts {
 	return e.Alerts
 }
 
+// ResolveTags returns the effective tag set for a context — union of the
+// file-level tags and the context-level tags, deduplicated and order-preserving
+// (file-level first, then context-level additions).
+func (e Entry) ResolveTags(contextName string) []string {
+	seen := make(map[string]bool, len(e.Tags))
+	out := make([]string, 0, len(e.Tags))
+	for _, t := range e.Tags {
+		if !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	if contextName != "" {
+		for _, t := range e.ContextTags[contextName] {
+			if !seen[t] {
+				seen[t] = true
+				out = append(out, t)
+			}
+		}
+	}
+	return out
+}
+
+// AddContextTags adds unique tags to the given context's tag list on the Entry.
+func (e *Entry) AddContextTags(contextName string, tags ...string) (added []string) {
+	if e.ContextTags == nil {
+		e.ContextTags = map[string][]string{}
+	}
+	existing := e.ContextTags[contextName]
+	seen := map[string]bool{}
+	for _, t := range existing {
+		seen[t] = true
+	}
+	for _, t := range tags {
+		t = normalizeTag(t)
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		existing = append(existing, t)
+		added = append(added, t)
+	}
+	e.ContextTags[contextName] = existing
+	return added
+}
+
+// RemoveContextTags removes tags from the given context's tag list.
+func (e *Entry) RemoveContextTags(contextName string, tags ...string) (removed []string) {
+	if e.ContextTags == nil {
+		return nil
+	}
+	drop := map[string]bool{}
+	for _, t := range tags {
+		drop[normalizeTag(t)] = true
+	}
+	existing := e.ContextTags[contextName]
+	kept := existing[:0]
+	for _, t := range existing {
+		if drop[t] {
+			removed = append(removed, t)
+			continue
+		}
+		kept = append(kept, t)
+	}
+	if len(kept) == 0 {
+		delete(e.ContextTags, contextName)
+	} else {
+		e.ContextTags[contextName] = kept
+	}
+	return removed
+}
+
 type Config struct {
 	Version       int              `yaml:"version"`
 	KubeconfigDir string           `yaml:"kubeconfig_dir,omitempty"`
+	AvailableTags []string         `yaml:"available_tags,omitempty"`
 	Entries       map[string]Entry `yaml:"entries,omitempty"`
 }
 
@@ -59,6 +133,106 @@ func NewConfig() *Config {
 		Version: CurrentVersion,
 		Entries: map[string]Entry{},
 	}
+}
+
+// AddAvailableTags inserts unique tags into the palette (order-preserving).
+func (c *Config) AddAvailableTags(tags ...string) (added []string) {
+	seen := map[string]bool{}
+	for _, t := range c.AvailableTags {
+		seen[t] = true
+	}
+	for _, t := range tags {
+		t = normalizeTag(t)
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		c.AvailableTags = append(c.AvailableTags, t)
+		added = append(added, t)
+	}
+	return added
+}
+
+// RemoveAvailableTags drops tags from the palette; also scrubs them from every
+// entry's file-level and per-context tag lists so listings stay consistent.
+func (c *Config) RemoveAvailableTags(tags ...string) (removed []string) {
+	drop := map[string]bool{}
+	for _, t := range tags {
+		drop[normalizeTag(t)] = true
+	}
+	kept := c.AvailableTags[:0]
+	for _, t := range c.AvailableTags {
+		if drop[t] {
+			removed = append(removed, t)
+			continue
+		}
+		kept = append(kept, t)
+	}
+	c.AvailableTags = kept
+
+	// Scrub from entries.
+	for hash, entry := range c.Entries {
+		fileKept := entry.Tags[:0]
+		for _, t := range entry.Tags {
+			if !drop[t] {
+				fileKept = append(fileKept, t)
+			}
+		}
+		entry.Tags = fileKept
+		for ctxName, ctxTags := range entry.ContextTags {
+			ctxKept := ctxTags[:0]
+			for _, t := range ctxTags {
+				if !drop[t] {
+					ctxKept = append(ctxKept, t)
+				}
+			}
+			if len(ctxKept) == 0 {
+				delete(entry.ContextTags, ctxName)
+			} else {
+				entry.ContextTags[ctxName] = ctxKept
+			}
+		}
+		c.Entries[hash] = entry
+	}
+	return removed
+}
+
+// IsTagInPalette checks membership.
+func (c *Config) IsTagInPalette(tag string) bool {
+	tag = normalizeTag(tag)
+	for _, t := range c.AvailableTags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
+}
+
+// EnsurePaletteFromEntries bootstraps the palette from tags already attached
+// to entries. Runs once on first palette access so existing state files
+// upgrade without the user having to re-declare every tag.
+func (c *Config) EnsurePaletteFromEntries() (populated bool) {
+	if len(c.AvailableTags) > 0 {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, entry := range c.Entries {
+		for _, t := range entry.Tags {
+			if !seen[t] {
+				seen[t] = true
+				c.AvailableTags = append(c.AvailableTags, t)
+			}
+		}
+		for _, ctxTags := range entry.ContextTags {
+			for _, t := range ctxTags {
+				if !seen[t] {
+					seen[t] = true
+					c.AvailableTags = append(c.AvailableTags, t)
+				}
+			}
+		}
+	}
+	return len(c.AvailableTags) > 0
 }
 
 func DefaultBlockedVerbs() []string {

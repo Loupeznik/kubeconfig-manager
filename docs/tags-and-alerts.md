@@ -4,14 +4,49 @@ Tags and alert policies are local metadata layered on top of each kubeconfig fil
 
 ## Tags
 
+Tags are drawn from a **global palette** you maintain with `kcm tag palette`. Only tags in the palette can be assigned to kubeconfigs (unless you pass `--allow-new`, which auto-adds them). The palette fuels the TUI's multi-select picker and gives CLI assignments a typo-safe allow-list.
+
+### Managing the palette
+
 ```sh
-kcm tag add prod prod eu critical         # add multiple tags
-kcm tag remove prod eu                    # remove specific tags
-kcm tag list                              # table of every file and its tags
-kcm tag list prod                         # tags for one file
+kcm tag palette list                              # show current palette
+kcm tag palette add prod staging dev eu us        # add tags to the palette
+kcm tag palette remove dev                        # remove from palette (also scrubs from every entry)
 ```
 
-Tags are free-form, whitespace is trimmed, duplicates are ignored. They appear in `kcm list` as a comma-separated column and in the TUI as green badges next to each kubeconfig.
+When the palette is empty, `kcm` bootstraps it from any tags already attached to entries on first access. You don't need to re-declare existing tags after upgrading.
+
+### Assigning tags
+
+```sh
+kcm tag add prod prod eu critical                 # file-level
+kcm tag add prod critical --context prod-eu       # per-context
+kcm tag remove prod eu                            # file-level
+kcm tag remove prod critical --context prod-eu    # per-context
+kcm tag list                                      # every file with file+context rows
+kcm tag list prod                                 # tags for one file (file + per-context)
+kcm tag list prod --context prod-eu               # effective tags for a specific context
+```
+
+Unknown tags are rejected with a helpful error:
+
+```
+tag(s) not in palette: some-unknown-tag (run 'kcm tag palette add some-unknown-tag' first, or pass --allow-new)
+```
+
+Use `--allow-new` once to add ad-hoc tags on the fly — they land in the palette for future use.
+
+Tags are whitespace-trimmed and deduplicated. They appear in `kcm list` as a column and in the TUI as green badges next to each kubeconfig, with cyan badges on the per-context view.
+
+### TUI tag editor
+
+With a populated palette, pressing `t` in the TUI opens a multi-select picker of palette tags:
+
+- `space` toggles the cursor row
+- `a` selects all, `n` selects none
+- `↵` saves, `esc` cancels
+
+If the palette is empty, the editor falls back to a comma-separated text input and suggests populating the palette.
 
 ## Alerts
 
