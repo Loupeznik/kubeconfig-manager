@@ -1,0 +1,49 @@
+version: 2
+
+project_name: kubeconfig-manager
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: kcm
+    main: ./cmd/kubeconfig-manager
+    binary: kcm
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/loupeznik/kubeconfig-manager/internal/cli.Version={{ .Version }}
+      - -X github.com/loupeznik/kubeconfig-manager/internal/cli.Commit={{ .Commit }}
+      - -X github.com/loupeznik/kubeconfig-manager/internal/cli.Date={{ .Date }}
+
+archives:
+  - id: kcm
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
