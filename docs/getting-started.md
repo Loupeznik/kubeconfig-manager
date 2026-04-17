@@ -59,7 +59,7 @@ export KUBECONFIG=~/.kube/prod.yaml
 kcm kubectl delete pod mypod    # prompts: "Proceed with kubectl delete?"
 ```
 
-If you'd like every `kubectl` invocation (not just `kcm kubectl`) to route through the guard, re-run the hook installer with `--alias-kubectl`. See [guard.md](guard.md).
+By default, `install-shell-hook` also aliases plain `kubectl` through the guard so alerts fire regardless of whether you type `kubectl` or `kcm kubectl`. Pass `--no-alias-kubectl` to skip this. See [guard.md](guard.md).
 
 ## Where to go next
 

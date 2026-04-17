@@ -45,20 +45,31 @@ kubeconfig-manager uninstall-shell-hook
 
 Removes only the fenced block. You can also remove it manually — the fence markers are stable.
 
-## Opt-in: route `kubectl` through the guard
+## kubectl alias (on by default)
 
-Adding `--alias-kubectl` installs an additional line inside the same fence block:
+By default, `install-shell-hook` writes an additional line inside the same fence block:
 
 ```sh
 alias kubectl='command kubeconfig-manager kubectl'
 ```
 
-With this enabled, every `kubectl` invocation goes through `kcm kubectl`, which checks the active kubeconfig's alert policy and prompts before destructive verbs. See [guard.md](guard.md) for the verb list and policy details.
+This ensures destructive-action alerts fire for plain `kubectl delete|drain|...` invocations too, not just `kcm kubectl ...`. Without the alias, running `kubectl delete` directly would bypass the guard entirely.
 
 **Trade-offs:**
+
 - One extra process on every `kubectl` invocation (negligible, ~1ms).
-- Alert confirmations may interrupt scripts — disable alerts on the relevant kubeconfig or use `kcm alert disable` before running the script.
-- Removing the alias is one command: `uninstall-shell-hook` or edit the rc file and delete the fenced block.
+- Alert confirmations may interrupt scripts — disable alerts on the relevant kubeconfig (`kcm alert disable <file>`) or run non-interactive workloads through the plain binary path (`command kubectl ...`, which bypasses the alias).
+- Removing the alias is one command: `kubeconfig-manager uninstall-shell-hook`, or edit the rc file and delete the fenced block.
+
+## Opting out of the kubectl alias
+
+If you'd rather only get alerts through explicit `kcm kubectl ...` invocations, pass `--no-alias-kubectl`:
+
+```sh
+kubeconfig-manager install-shell-hook --no-alias-kubectl
+```
+
+The installed fence block will only contain the `kcm()` function, not the `kubectl` alias. **Note:** this means `kubectl delete` and similar destructive commands will run without any guardrail, even when you've enabled alerts on the active kubeconfig.
 
 ## How shell detection works
 

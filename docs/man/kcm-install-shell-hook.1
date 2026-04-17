@@ -2,7 +2,7 @@
 .TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
 
 .SH NAME
-kcm-install-shell-hook - Install shell integration (kcm function, optional kubectl alias)
+kcm-install-shell-hook - Install shell integration (kcm function and kubectl alias)
 
 
 .SH SYNOPSIS
@@ -10,16 +10,22 @@ kcm-install-shell-hook - Install shell integration (kcm function, optional kubec
 
 
 .SH DESCRIPTION
-Install shell integration (kcm function, optional kubectl alias)
+Installs a fenced block in your shell rc with two things:
+  1. A kcm() function that evaluates the export snippet from \fBkcm use\fR and \fBkcm tui\fR\&.
+  2. An alias so plain \fBkubectl\fR routes through kcm's destructive-action guard.
+
+.PP
+Pass --no-alias-kubectl to skip the kubectl alias (alerts will only fire when you
+run \fBkcm kubectl ...\fR explicitly).
 
 
 .SH OPTIONS
-\fB--alias-kubectl\fP[=false]
-	Also alias kubectl to route through the guard (opt-in)
-
-.PP
 \fB-h\fP, \fB--help\fP[=false]
 	help for install-shell-hook
+
+.PP
+\fB--no-alias-kubectl\fP[=false]
+	Skip the kubectl alias (alerts won't fire for plain kubectl invocations)
 
 .PP
 \fB--rc\fP=""

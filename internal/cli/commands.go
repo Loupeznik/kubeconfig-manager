@@ -126,11 +126,16 @@ func newTUICmd() *cobra.Command {
 func newInstallShellHookCmd() *cobra.Command {
 	var shellFlag string
 	var rcFlag string
-	var aliasKubectl bool
+	var noAliasKubectl bool
 
 	cmd := &cobra.Command{
 		Use:   "install-shell-hook",
-		Short: "Install shell integration (kcm function, optional kubectl alias)",
+		Short: "Install shell integration (kcm function and kubectl alias)",
+		Long: "Installs a fenced block in your shell rc with two things:\n" +
+			"  1. A kcm() function that evaluates the export snippet from `kcm use` and `kcm tui`.\n" +
+			"  2. An alias so plain `kubectl` routes through kcm's destructive-action guard.\n\n" +
+			"Pass --no-alias-kubectl to skip the kubectl alias (alerts will only fire when you\n" +
+			"run `kcm kubectl ...` explicitly).",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			sh, err := shell.Resolve(shellFlag)
 			if err != nil {
@@ -143,6 +148,7 @@ func newInstallShellHookCmd() *cobra.Command {
 					return err
 				}
 			}
+			aliasKubectl := !noAliasKubectl
 			hook, err := shell.RenderHook(sh, shell.HookOptions{AliasKubectl: aliasKubectl})
 			if err != nil {
 				return err
@@ -160,7 +166,9 @@ func newInstallShellHookCmd() *cobra.Command {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "installed %s hook in %s\n", sh, res.RCPath)
 			}
 			if aliasKubectl {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "note: kubectl alias installed — all kubectl invocations route through kubeconfig-manager")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "kubectl alias installed — destructive-action alerts apply to plain `kubectl` invocations too")
+			} else {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "kubectl alias skipped — alerts will only fire for `kcm kubectl ...`")
 			}
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "restart your shell or source the rc file to activate")
 			return nil
@@ -168,7 +176,7 @@ func newInstallShellHookCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&shellFlag, "shell", "", "bash, zsh, or pwsh (auto-detected if unset)")
 	cmd.Flags().StringVar(&rcFlag, "rc", "", "rc file path (default depends on shell)")
-	cmd.Flags().BoolVar(&aliasKubectl, "alias-kubectl", false, "Also alias kubectl to route through the guard (opt-in)")
+	cmd.Flags().BoolVar(&noAliasKubectl, "no-alias-kubectl", false, "Skip the kubectl alias (alerts won't fire for plain kubectl invocations)")
 	return cmd
 }
 

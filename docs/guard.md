@@ -4,13 +4,13 @@
 
 ## Activation scopes
 
-By default, only `kcm kubectl` invocations go through the guard. To intercept every `kubectl` call — including direct ones and ones made by scripts — add the opt-in alias:
+`kcm install-shell-hook` aliases plain `kubectl` through the guard by default, so every `kubectl` call — direct ones, `k`/`kg`/`kns`-style aliases, and ones made by scripts — is intercepted. To opt out and only trigger the guard for explicit `kcm kubectl ...` invocations:
 
 ```sh
-kubeconfig-manager install-shell-hook --alias-kubectl
+kubeconfig-manager install-shell-hook --no-alias-kubectl
 ```
 
-See [shell-integration.md](shell-integration.md#opt-in-route-kubectl-through-the-guard) for the trade-offs.
+See [shell-integration.md](shell-integration.md#kubectl-alias-on-by-default) for the trade-offs.
 
 ## How a decision is made
 

@@ -17,7 +17,7 @@ kubeconfig-manager (kcm) is a TUI + CLI for managing local kubeconfig files and 
 * [kcm alert](kcm_alert.md)	 - Configure destructive-action alerts per kubeconfig or context
 * [kcm contexts](kcm_contexts.md)	 - List contexts in the default kubeconfig (~/.kube/config)
 * [kcm import](kcm_import.md)	 - Merge a kubeconfig file into the default ~/.kube/config (or --into)
-* [kcm install-shell-hook](kcm_install-shell-hook.md)	 - Install shell integration (kcm function, optional kubectl alias)
+* [kcm install-shell-hook](kcm_install-shell-hook.md)	 - Install shell integration (kcm function and kubectl alias)
 * [kcm kubectl](kcm_kubectl.md)	 - Run kubectl through the destructive-action guard
 * [kcm list](kcm_list.md)	 - List kubeconfig files in the managed directory
 * [kcm merge](kcm_merge.md)	 - Merge two kubeconfig files into a new file
