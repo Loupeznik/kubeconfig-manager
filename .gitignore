@@ -1,6 +1,7 @@
 /bin/
 /dist/
 /.sisyphus/
+/.temp/
 *.exe
 *.test
 *.out

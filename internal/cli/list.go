@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/loupeznik/kubeconfig-manager/internal/kubeconfig"
+	"github.com/loupeznik/kubeconfig-manager/internal/state"
 )
 
 func newListCmd() *cobra.Command {
@@ -25,14 +26,36 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
+			store, err := state.DefaultStore()
+			if err != nil {
+				return err
+			}
+			cfg, err := store.Load(cmd.Context())
+			if err != nil {
+				return err
+			}
+
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			_, _ = fmt.Fprintln(tw, "FILE\tCONTEXTS\tCURRENT")
+			_, _ = fmt.Fprintln(tw, "FILE\tCONTEXTS\tCURRENT\tTAGS\tALERTS")
 			for _, f := range result.Files {
 				current := f.Config.CurrentContext
 				if current == "" {
 					current = "-"
 				}
-				_, _ = fmt.Fprintf(tw, "%s\t%d\t%s\n", f.Name(), len(f.Config.Contexts), current)
+				hash, err := kubeconfig.HashFile(f.Path)
+				if err != nil {
+					return err
+				}
+				entry := cfg.Entries[hash]
+				tags := "-"
+				if len(entry.Tags) > 0 {
+					tags = strings.Join(entry.Tags, ",")
+				}
+				alerts := "off"
+				if entry.Alerts.Enabled {
+					alerts = "on"
+				}
+				_, _ = fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\n", f.Name(), len(f.Config.Contexts), current, tags, alerts)
 			}
 			if err := tw.Flush(); err != nil {
 				return err

@@ -1,8 +1,11 @@
 package kubeconfig
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -116,6 +119,20 @@ func DefaultPath() (string, error) {
 }
 
 var ErrNotFound = errors.New("kubeconfig not found")
+
+func HashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("hash %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("hash %s: %w", path, err)
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
+}
 
 func ResolvePath(nameOrPath, dir string) (string, error) {
 	if strings.HasPrefix(nameOrPath, "~/") {

@@ -28,6 +28,7 @@ func NewRootCmd() *cobra.Command {
 		newUseCmd(),
 		newTagCmd(),
 		newAlertCmd(),
+		newRenameCmd(),
 		newImportCmd(),
 		newSplitCmd(),
 		newMergeCmd(),

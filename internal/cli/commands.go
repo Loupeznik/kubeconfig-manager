@@ -19,32 +19,6 @@ func newUseCmd() *cobra.Command {
 	return cmd
 }
 
-func newTagCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "tag",
-		Short: "Manage tags on kubeconfig files",
-	}
-	cmd.AddCommand(
-		&cobra.Command{Use: "add <file> <tag...>", Short: "Add tags", RunE: func(cmd *cobra.Command, args []string) error { return errNotImplemented }},
-		&cobra.Command{Use: "remove <file> <tag...>", Short: "Remove tags", RunE: func(cmd *cobra.Command, args []string) error { return errNotImplemented }},
-		&cobra.Command{Use: "list [file]", Short: "List tags", RunE: func(cmd *cobra.Command, args []string) error { return errNotImplemented }},
-	)
-	return cmd
-}
-
-func newAlertCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "alert",
-		Short: "Configure destructive-action alerts per kubeconfig",
-	}
-	cmd.AddCommand(
-		&cobra.Command{Use: "enable <file>", Short: "Enable alerts", RunE: func(cmd *cobra.Command, args []string) error { return errNotImplemented }},
-		&cobra.Command{Use: "disable <file>", Short: "Disable alerts", RunE: func(cmd *cobra.Command, args []string) error { return errNotImplemented }},
-		&cobra.Command{Use: "show <file>", Short: "Show alert policy", RunE: func(cmd *cobra.Command, args []string) error { return errNotImplemented }},
-	)
-	return cmd
-}
-
 func newImportCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "import <file>",
