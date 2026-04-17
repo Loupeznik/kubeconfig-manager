@@ -35,6 +35,7 @@ func NewRootCmd() *cobra.Command {
 		newKubectlCmd(),
 		newTUICmd(),
 		newInstallShellHookCmd(),
+		newUninstallShellHookCmd(),
 	)
 
 	return root
