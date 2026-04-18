@@ -58,30 +58,14 @@ v0.9 ships with unit tests (~70 test cases across `shell`, `state`, `kubeconfig`
 
 When a kubeconfig's contents change (credential rotation), its hash changes and the old state entry becomes orphaned. A `kcm prune` command would list and optionally remove state entries whose `path_hint` no longer points to a file with the matching hash.
 
-## Documentation site
+## Rename and delete contexts within a kubeconfig
 
-The markdown in `docs/` is already structured for static-site rendering. Recommended framework: **[MkDocs](https://www.mkdocs.org/) with the [Material theme](https://squidfunk.github.io/mkdocs-material/)**.
+Today `kcm` can split a context out into its own file (via `kcm split`) or remove one from its source file during that operation, but there's no direct "rename this context" or "delete this context" primitive. Add both in the CLI and the TUI:
 
-Why MkDocs Material:
-- De-facto standard for Kubernetes-adjacent CLI docs (Helm, Kustomize, ArgoCD, Velero, Flux, etc.).
-- Builds from the same markdown already in `docs/` with minimal frontmatter.
-- Built-in search, dark mode, versioning via `mike`.
-- One-workflow deploy to GitHub Pages via `peaceiris/actions-gh-pages` or `mkdocs gh-deploy`.
-- Python toolchain — a single `mkdocs.yml` plus a `pip install mkdocs-material`.
+- **CLI:** `kcm context rename <file> <old> <new>` and `kcm context delete <file> <name>` (or similar). Mutation goes through `clientcmd.WriteToFile` for atomic writes; references in other contexts/state are updated or scrubbed.
+- **TUI:** from the detail view of a kubeconfig, add `R` to rename the highlighted context and `D` (capital, destructive) to delete it with a confirmation modal. Updates `current-context` if the active one was affected.
 
-Migration plan when ready:
-
-1. Add `mkdocs.yml` at repo root with `theme: material` and `nav:` entries mirroring `docs/README.md`.
-2. Add `.github/workflows/docs.yml` that runs `mkdocs gh-deploy --force` on pushes to main (after a manual approval gate, per the project's CI/CD convention).
-3. Enable GitHub Pages in repo settings, source = `gh-pages` branch.
-4. Point `docs/` URLs at the hosted site; keep the raw markdown files in-tree so GitHub's repo browser keeps rendering them too.
-
-Alternatives considered:
-- **Docusaurus** — React-based, more flexible but heavier toolchain. Worth it if you want blog/versioning/custom React components.
-- **Hugo + Docsy** — Kubernetes itself uses this; very capable but more opinionated and harder to skin.
-- **Astro Starlight** — newer, fast, good DX. Fewer off-the-shelf integrations with the kube ecosystem.
-
-For a CLI tool's reference docs, MkDocs Material hits the sweet spot.
+State handling: per-context tags and alerts attached to the old name should follow the rename (move under the new key) or be dropped on delete.
 
 ## TUI parity with CLI ops
 
