@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/loupeznik/kubeconfig-manager/internal/kubeconfig"
 	"github.com/loupeznik/kubeconfig-manager/internal/state"
 )
 
@@ -78,7 +77,7 @@ func (d HelmDecision) Describe() string {
 // a HelmDecision with zero triggers when everything lines up.
 func EvaluateHelm(ctx context.Context, store state.Store, kubeconfigEnv string, args []string) (HelmDecision, error) {
 	d := HelmDecision{}
-	paths, err := resolveKubeconfigPaths(kubeconfigEnv)
+	paths, cfg, err := loadStoreAndPaths(ctx, store, kubeconfigEnv)
 	if err != nil {
 		return d, err
 	}
@@ -87,52 +86,33 @@ func EvaluateHelm(ctx context.Context, store state.Store, kubeconfigEnv string, 
 	}
 	// Use the first kubeconfig for context resolution — matches kubectl's
 	// default when $KUBECONFIG is a single file and is the common case.
-	kcPath := paths[0]
-
-	f, err := kubeconfig.Load(kcPath)
-	if err != nil {
+	res, ok := resolveActive(cfg, paths[0], ExtractContext(args))
+	if !ok {
 		return d, nil
 	}
-	ctxName := ExtractContext(args)
-	if ctxName == "" {
-		ctxName = f.Config.CurrentContext
-	}
-	d.ContextName = ctxName
-	if kctx, ok := f.Config.Contexts[ctxName]; ok && kctx != nil {
-		d.ClusterName = kctx.Cluster
-	}
+	d.ContextName = res.ContextName
+	d.ClusterName = res.ClusterName
 
-	cfg, err := store.Load(ctx)
-	if err != nil {
-		return d, err
-	}
-
-	id, err := kubeconfig.IdentifyFile(kcPath)
-	if err != nil {
-		return d, nil
-	}
-	entry, _ := cfg.GetEntry(id.StableHash, id.ContentHash)
-	policy := entry.ResolveHelmGuard(cfg.HelmGuard)
+	policy := res.Entry.ResolveHelmGuard(cfg.HelmGuard)
 	if !policy.Enabled {
 		return d, nil
 	}
 	d.Policy = policy
 
-	valuesPaths := extractHelmValuesPaths(args)
-	for _, vp := range valuesPaths {
+	for _, vp := range extractHelmValuesPaths(args) {
 		derived, ok := deriveNameFromPath(vp, policy.Pattern)
 		if !ok {
 			continue // path doesn't match the template — silently skip
 		}
-		sev, reason := compareHelmNames(derived, ctxName, d.ClusterName, policy.EnvTokens)
+		sev, reason := compareHelmNames(derived, res.ContextName, res.ClusterName, policy.EnvTokens)
 		if sev == HelmMatchOK {
 			continue
 		}
 		d.Triggers = append(d.Triggers, HelmTrigger{
 			ValuesPath:    vp,
 			DerivedName:   derived,
-			ActiveContext: ctxName,
-			ActiveCluster: d.ClusterName,
+			ActiveContext: res.ContextName,
+			ActiveCluster: res.ClusterName,
 			Severity:      sev,
 			Reason:        reason,
 		})

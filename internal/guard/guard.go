@@ -68,7 +68,7 @@ func Evaluate(ctx context.Context, store state.Store, kubeconfigEnv string, args
 		return d, nil
 	}
 
-	paths, err := resolveKubeconfigPaths(kubeconfigEnv)
+	paths, cfg, err := loadStoreAndPaths(ctx, store, kubeconfigEnv)
 	if err != nil {
 		return d, err
 	}
@@ -77,35 +77,15 @@ func Evaluate(ctx context.Context, store state.Store, kubeconfigEnv string, args
 		return d, nil
 	}
 
-	cfg, err := store.Load(ctx)
-	if err != nil {
-		return d, err
-	}
-
 	argContext := ExtractContext(args)
 
 	for _, p := range paths {
-		id, err := kubeconfig.IdentifyFile(p)
-		if err != nil {
-			continue
-		}
-		entry, ok := cfg.GetEntry(id.StableHash, id.ContentHash)
-		if !ok {
+		res, ok := resolveActive(cfg, p, argContext)
+		if !ok || !res.EntryFound {
 			continue
 		}
 
-		activeContext := argContext
-		var clusterName string
-		if f, err := kubeconfig.Load(p); err == nil {
-			if activeContext == "" {
-				activeContext = f.Config.CurrentContext
-			}
-			if kctx, ok := f.Config.Contexts[activeContext]; ok && kctx != nil {
-				clusterName = kctx.Cluster
-			}
-		}
-
-		policy := entry.ResolveAlerts(activeContext)
+		policy := res.Entry.ResolveAlerts(res.ContextName)
 		if !policy.Enabled {
 			continue
 		}
@@ -118,11 +98,11 @@ func Evaluate(ctx context.Context, store state.Store, kubeconfigEnv string, args
 		}
 
 		d.Triggers = append(d.Triggers, Trigger{
-			Path:         p,
-			Hash:         id.StableHash,
-			Entry:        entry,
-			ContextName:  activeContext,
-			ClusterName:  clusterName,
+			Path:         res.Path,
+			Hash:         res.Identity.StableHash,
+			Entry:        res.Entry,
+			ContextName:  res.ContextName,
+			ClusterName:  res.ClusterName,
 			Policy:       policy,
 			MatchedVerbs: []string{verb},
 		})

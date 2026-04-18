@@ -145,14 +145,6 @@ func IdentifyFile(path string) (Identity, error) {
 	return Identity{StableHash: stable, ContentHash: content}, nil
 }
 
-// HashFile returns the stable fingerprint of the kubeconfig at path. This is
-// the canonical key for state entries.
-//
-// Equivalent to StableHashFile; kept for caller compatibility.
-func HashFile(path string) (string, error) {
-	return StableHashFile(path)
-}
-
 // StableHashFile parses the kubeconfig and returns a hash of its logical
 // topology (cluster names + servers, user names, context name/cluster/user
 // tuples). Stable across:

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -145,7 +146,7 @@ func newHelmGuardShowCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			if file == "" {
-				printHelmGuard(out, "Global", cfg.HelmGuard, state.HelmGuard{})
+				printHelmGuard(out, "Global", cfg.HelmGuard)
 				return nil
 			}
 			resolvedDir, err := resolveDir(dir)
@@ -163,12 +164,12 @@ func newHelmGuardShowCmd() *cobra.Command {
 			entry, _ := cfg.GetEntry(id.StableHash, id.ContentHash)
 			_, _ = fmt.Fprintf(out, "File: %s\n", path)
 			if entry.HelmGuard != nil {
-				printHelmGuard(out, "Per-entry override", *entry.HelmGuard, state.HelmGuard{})
+				printHelmGuard(out, "Per-entry override", *entry.HelmGuard)
 			} else {
 				_, _ = fmt.Fprintln(out, "(no per-entry override; inherits global)")
 			}
 			_, _ = fmt.Fprintln(out)
-			printHelmGuard(out, "Effective (resolved)", entry.ResolveHelmGuard(cfg.HelmGuard), state.HelmGuard{})
+			printHelmGuard(out, "Effective (resolved)", entry.ResolveHelmGuard(cfg.HelmGuard))
 			return nil
 		},
 	}
@@ -178,7 +179,7 @@ func newHelmGuardShowCmd() *cobra.Command {
 	return cmd
 }
 
-func printHelmGuard(out io.Writer, label string, hg state.HelmGuard, _ state.HelmGuard) {
+func printHelmGuard(out io.Writer, label string, hg state.HelmGuard) {
 	_, _ = fmt.Fprintf(out, "%s:\n", label)
 	_, _ = fmt.Fprintf(out, "  Enabled:  %t\n", hg.Enabled)
 	pattern := hg.Pattern
@@ -227,22 +228,12 @@ func mutateHelmGuard(cmd *cobra.Command, dir, file string, mutate func(*state.He
 			entry.HelmGuard = &state.HelmGuard{}
 		}
 		mutate(entry.HelmGuard)
-		entry.PathHint = filenameOf(path)
+		entry.PathHint = filepath.Base(path)
 		entry.Touch()
 		cfg.Entries[id.StableHash] = entry
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "helm-guard %s for %s\n", status, path)
 		return nil
 	})
-}
-
-func filenameOf(p string) string {
-	// Small local helper to avoid pulling filepath in just for this one use.
-	for i := len(p) - 1; i >= 0; i-- {
-		if p[i] == '/' || p[i] == '\\' {
-			return p[i+1:]
-		}
-	}
-	return p
 }
 
 // completionFuncForFileFlag completes the --file flag for helm-guard commands

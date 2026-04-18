@@ -45,7 +45,7 @@ func newTestStore(t *testing.T) *state.FileStore {
 
 func seedEntry(t *testing.T, store *state.FileStore, path string, entry state.Entry) {
 	t.Helper()
-	hash, err := kubeconfig.HashFile(path)
+	hash, err := kubeconfig.StableHashFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
