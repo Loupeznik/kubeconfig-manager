@@ -1,0 +1,48 @@
+# Exercise the core flow: scan a dir, export for bash, toggle alerts, verify show.
+
+mkdir $WORK/kube
+cp $WORK/prod.yaml $WORK/kube/prod.yaml
+
+# list includes the file, context count, current context.
+exec kcm list --dir $WORK/kube
+stdout 'prod.yaml'
+stdout 'prod-eu'
+
+# use emits a bash export line with the absolute path.
+exec kcm use prod --dir $WORK/kube --shell=bash
+stdout 'export KUBECONFIG='
+stdout 'prod.yaml'
+
+# Enable file-level alerts, then show them.
+exec kcm alert enable prod --dir $WORK/kube
+stdout 'alerts enabled'
+
+exec kcm alert show prod --dir $WORK/kube
+stdout 'Enabled:               true'
+stdout 'delete'
+
+# Per-context override: disable for prod-eu.
+exec kcm alert disable prod --context prod-eu --dir $WORK/kube
+stdout 'alerts disabled for context prod-eu'
+
+exec kcm alert show prod --dir $WORK/kube
+stdout 'File-level'
+stdout 'Per-context overrides'
+
+-- prod.yaml --
+apiVersion: v1
+kind: Config
+current-context: prod-eu
+clusters:
+  - name: prod-eu-cluster
+    cluster:
+      server: https://prod-eu.example.test
+contexts:
+  - name: prod-eu
+    context:
+      cluster: prod-eu-cluster
+      user: prod-admin
+users:
+  - name: prod-admin
+    user:
+      token: test

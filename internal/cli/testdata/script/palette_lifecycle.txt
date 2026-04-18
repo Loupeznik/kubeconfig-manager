@@ -1,0 +1,51 @@
+# Populate the palette, assert it lists back, and verify tag add respects membership.
+
+exec kcm tag palette list
+stdout 'palette is empty'
+
+exec kcm tag palette add prod staging critical
+stdout 'added to palette: prod, staging, critical'
+
+exec kcm tag palette list
+stdout 'prod'
+stdout 'staging'
+stdout 'critical'
+
+# Tag add against a seeded kubeconfig — unknown tag is rejected.
+mkdir $WORK/kube
+cp $WORK/prod.yaml $WORK/kube/prod.yaml
+
+! exec kcm tag add prod unknown-tag --dir $WORK/kube
+stderr 'not in palette'
+
+# --allow-new extends the palette on the fly.
+exec kcm tag add prod emergency --allow-new --dir $WORK/kube
+stdout 'added to palette: emergency'
+
+exec kcm tag palette list
+stdout 'emergency'
+
+# Remove scrubs from palette and from entries.
+exec kcm tag palette remove critical
+stdout 'removed from palette'
+
+exec kcm tag palette list
+! stdout 'critical'
+
+-- prod.yaml --
+apiVersion: v1
+kind: Config
+current-context: prod-eu
+clusters:
+  - name: prod-eu-cluster
+    cluster:
+      server: https://prod-eu.example.test
+contexts:
+  - name: prod-eu
+    context:
+      cluster: prod-eu-cluster
+      user: prod-admin
+users:
+  - name: prod-admin
+    user:
+      token: test

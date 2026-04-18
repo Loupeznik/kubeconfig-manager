@@ -1,0 +1,18 @@
+# Install the shell hook twice, assert the fence block exists exactly once and
+# responds correctly to --no-alias-kubectl.
+
+exec kcm install-shell-hook --shell=zsh --rc=$WORK/.zshrc
+stdout 'installed zsh hook'
+grep '>>> kubeconfig-manager shell hook >>>' $WORK/.zshrc
+grep 'alias kubectl=' $WORK/.zshrc
+
+# Re-run replaces the block in place (not appended) and honors --no-alias-kubectl.
+exec kcm install-shell-hook --shell=zsh --rc=$WORK/.zshrc --no-alias-kubectl
+stdout 'updated zsh hook'
+grep '>>> kubeconfig-manager shell hook >>>' $WORK/.zshrc
+! grep 'alias kubectl=' $WORK/.zshrc
+
+# Uninstall wipes the block.
+exec kcm uninstall-shell-hook --shell=zsh --rc=$WORK/.zshrc
+stdout 'removed kubeconfig-manager hook'
+! grep '>>> kubeconfig-manager shell hook >>>' $WORK/.zshrc

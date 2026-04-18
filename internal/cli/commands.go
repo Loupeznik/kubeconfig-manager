@@ -76,7 +76,14 @@ func newKubectlCmd() *cobra.Command {
 					return err
 				}
 			}
-			return guard.Exec(args)
+			code, err := guard.Exec(args, guard.ExecOptions{})
+			if err != nil {
+				return err
+			}
+			if code != 0 {
+				os.Exit(code)
+			}
+			return nil
 		},
 	}
 	return cmd
