@@ -60,7 +60,9 @@ When a kubeconfig's contents change (credential rotation), its hash changes and 
 
 ## Versioned documentation site
 
-The current Pages deploy publishes whatever's on `master` as a single site. For long-term maintenance we need to show docs per version (and let visitors switch between them) — standard [**`mike`**](https://github.com/jimporter/mike) is the MkDocs-native answer here.
+As of v0.9.2 the Pages deploy publishes the docs from the **latest release tag** (`on: push: tags: ['v*']`), so users always see the docs matching the binary they downloaded. Master-only changes are visible on GitHub's repo browser but not on the hosted site until the next release.
+
+Long-term we want a true version switcher (dropdown showing v0.9.0, v0.9.1, …, dev) — standard [**`mike`**](https://github.com/jimporter/mike) is the MkDocs-native answer here.
 
 Plan:
 
