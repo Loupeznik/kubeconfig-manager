@@ -1,0 +1,37 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-prune - List (and optionally remove) state entries whose kubeconfig is gone or whose topology changed
+
+
+.SH SYNOPSIS
+\fBkcm prune [flags]\fP
+
+
+.SH DESCRIPTION
+Walks the state file and reports entries that no longer match an actual
+kubeconfig on disk — either the file referenced by path_hint is missing,
+or its current stable fingerprint differs from the entry's key (meaning
+the kubeconfig was edited in a way that changed its logical topology).
+
+.PP
+Default is a dry run: prints the list and exits. Pass --yes to actually
+remove the stale entries.
+
+
+.SH OPTIONS
+\fB--dir\fP=""
+	Kubeconfig directory to match path_hints against (default: ~/.kube)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for prune
+
+.PP
+\fB--yes\fP[=false]
+	Actually remove the stale entries (default: dry-run)
+
+
+.SH SEE ALSO
+\fBkcm(1)\fP

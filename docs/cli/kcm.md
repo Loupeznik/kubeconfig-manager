@@ -21,6 +21,7 @@ kubeconfig-manager (kcm) is a TUI + CLI for managing local kubeconfig files and 
 * [kcm kubectl](kcm_kubectl.md)	 - Run kubectl through the destructive-action guard
 * [kcm list](kcm_list.md)	 - List kubeconfig files in the managed directory
 * [kcm merge](kcm_merge.md)	 - Merge two kubeconfig files into a new file
+* [kcm prune](kcm_prune.md)	 - List (and optionally remove) state entries whose kubeconfig is gone or whose topology changed
 * [kcm rename](kcm_rename.md)	 - Rename a kubeconfig file on disk (metadata re-binds automatically)
 * [kcm show](kcm_show.md)	 - Show contexts, clusters, and users of a kubeconfig file
 * [kcm split](kcm_split.md)	 - Extract a context (with its cluster and user) into its own file

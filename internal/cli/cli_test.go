@@ -510,6 +510,106 @@ func TestInstallShellHookCreatesIdempotentBlock(t *testing.T) {
 	}
 }
 
+// -------- prune --------------------------------------------------------------
+
+func TestPruneReportsOrphanedAndTopologyChangedEntries(t *testing.T) {
+	dir := seedKubeconfigDir(t)
+	stateHome := t.TempDir()
+
+	// Create a legit state entry by enabling alerts on prod.
+	if _, _, err := runCmdInState(t, stateHome, "alert", "enable", "prod", "--dir", dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Inject an orphan entry (path_hint points to a non-existent file).
+	storePath := filepath.Join(stateHome, "kubeconfig-manager", "config.yaml")
+	store := state.NewFileStore(storePath)
+	if err := store.Mutate(context.Background(), func(cfg *state.Config) error {
+		cfg.Entries["sha256:orphan"] = state.Entry{PathHint: "gone.yaml"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Inject a topology-mismatch entry: path_hint resolves to staging.yaml but
+	// keyed under a hash that doesn't match its current stable fingerprint.
+	if err := store.Mutate(context.Background(), func(cfg *state.Config) error {
+		cfg.Entries["sha256:stale"] = state.Entry{PathHint: "staging.yaml"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Dry-run prune should list both.
+	out, _, err := runCmdInState(t, stateHome, "prune", "--dir", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "sha256:orphan") {
+		t.Errorf("prune output missing orphan: %s", out)
+	}
+	if !strings.Contains(out, "sha256:stale") {
+		t.Errorf("prune output missing stale topology entry: %s", out)
+	}
+	if !strings.Contains(out, "file not found") {
+		t.Errorf("prune output missing 'file not found' reason: %s", out)
+	}
+	if !strings.Contains(out, "topology changed") {
+		t.Errorf("prune output missing 'topology changed' reason: %s", out)
+	}
+	if !strings.Contains(out, "--yes") {
+		t.Errorf("dry-run should suggest --yes: %s", out)
+	}
+
+	// Nothing removed yet.
+	cfg, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg.Entries["sha256:orphan"]; !ok {
+		t.Error("dry-run should not have removed the orphan")
+	}
+
+	// Actually prune.
+	out, _, err = runCmdInState(t, stateHome, "prune", "--dir", dir, "--yes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Removed") {
+		t.Errorf("prune --yes should confirm removal: %s", out)
+	}
+	cfg, err = store.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg.Entries["sha256:orphan"]; ok {
+		t.Error("orphan should be removed")
+	}
+	if _, ok := cfg.Entries["sha256:stale"]; ok {
+		t.Error("stale topology entry should be removed")
+	}
+	// Legit prod entry should survive.
+	if len(cfg.Entries) == 0 {
+		t.Error("prune removed too much — legit entries gone")
+	}
+}
+
+func TestPruneNoStaleEntriesReportsClean(t *testing.T) {
+	dir := seedKubeconfigDir(t)
+	stateHome := t.TempDir()
+
+	if _, _, err := runCmdInState(t, stateHome, "alert", "enable", "prod", "--dir", dir); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := runCmdInState(t, stateHome, "prune", "--dir", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "no stale state entries") {
+		t.Errorf("expected clean report, got: %s", out)
+	}
+}
+
 // -------- state isolation sanity --------------------------------------------
 
 func TestStateIsIsolatedViaXDGConfigHome(t *testing.T) {
