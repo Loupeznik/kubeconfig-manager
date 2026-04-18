@@ -821,18 +821,21 @@ type contextRow struct {
 func (r contextRow) effectiveTags() []string { return mergeTags(r.fileTags, r.ctxTags) }
 
 // alertIndicator returns the badge for the effective alert state, or "" when
-// there's nothing to show (no file-level alerts and no override).
+// there's nothing meaningful to show. "alerts off (override)" only appears
+// when the context explicitly suppresses a file-level policy that would
+// otherwise apply — showing it when there's no file-level policy in the first
+// place would be confusing noise.
 func (r contextRow) alertIndicator() string {
 	if r.ctxAlerts.Enabled {
 		return alertBadgeStyle.Render("⚠ ctx alerts")
 	}
-	if r.fileAlerts.Enabled && !isContextAlertsExplicitlyDisabled(r.ctxAlerts) {
-		return alertBadgeStyle.Render("⚠ file alerts")
+	if !r.fileAlerts.Enabled {
+		return ""
 	}
 	if isContextAlertsExplicitlyDisabled(r.ctxAlerts) {
 		return detailLabelStyle.Render("alerts off (override)")
 	}
-	return ""
+	return alertBadgeStyle.Render("⚠ file alerts")
 }
 
 func isContextAlertsExplicitlyDisabled(a state.Alerts) bool {
