@@ -10,6 +10,7 @@ kcm context rename <file> <old-name> <new-name> [flags]
 
 ```
       --dir string   Kubeconfig directory (default: ~/.kube)
+      --dry-run      Print the planned change without touching the file or state
   -h, --help         help for rename
 ```
 

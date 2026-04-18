@@ -510,6 +510,72 @@ func TestInstallShellHookCreatesIdempotentBlock(t *testing.T) {
 	}
 }
 
+// -------- dry-run -----------------------------------------------------------
+
+func TestDryRunSkipsFileAndStateWrites(t *testing.T) {
+	dir := seedKubeconfigDir(t)
+	stateHome := t.TempDir()
+
+	out, _, err := runCmdInState(t, stateHome, "context", "rename", "prod", "prod-eu", "prod-europe", "--dir", dir, "--dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "[dry-run]") {
+		t.Errorf("expected dry-run prefix: %s", out)
+	}
+	// File stayed on disk unchanged — prod-eu still present, prod-europe not.
+	f, err := kubeconfig.Load(filepath.Join(dir, "prod.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, has := f.Config.Contexts["prod-eu"]; !has {
+		t.Error("dry-run should leave original context in place")
+	}
+	if _, has := f.Config.Contexts["prod-europe"]; has {
+		t.Error("dry-run should not have created the new context")
+	}
+
+	// Same for file rename.
+	out, _, err = runCmdInState(t, stateHome, "rename", "prod", "production.yaml", "--dir", dir, "--dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "[dry-run]") {
+		t.Errorf("expected dry-run prefix: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "prod.yaml")); err != nil {
+		t.Error("dry-run should leave original filename in place")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "production.yaml")); err == nil {
+		t.Error("dry-run should not have created new filename")
+	}
+}
+
+// -------- doctor ------------------------------------------------------------
+
+func TestDoctorReportsCheckLines(t *testing.T) {
+	dir := seedKubeconfigDir(t)
+	stateHome := t.TempDir()
+	t.Setenv("KUBECONFIG", filepath.Join(dir, "prod.yaml"))
+
+	out, _, err := runCmdInState(t, stateHome, "doctor")
+	// No assertion on err — missing helm/kubectl on a contributor's machine
+	// would make this fail for unrelated reasons. We only assert format.
+	_ = err
+	for _, section := range []string{
+		"kubectl on PATH",
+		"shell hook",
+		"state file",
+		"active kubeconfig",
+		"tag palette",
+		"stale state entries",
+	} {
+		if !strings.Contains(out, section) {
+			t.Errorf("doctor output missing section %q:\n%s", section, out)
+		}
+	}
+}
+
 // -------- starship ----------------------------------------------------------
 
 func TestStarshipSilentWhenNoEntry(t *testing.T) {

@@ -41,6 +41,7 @@ func NewRootCmd() *cobra.Command {
 		newInstallShellHookCmd(),
 		newUninstallShellHookCmd(),
 		newStarshipCmd(),
+		newDoctorCmd(),
 	)
 
 	return root

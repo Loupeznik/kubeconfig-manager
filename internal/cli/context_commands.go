@@ -23,6 +23,7 @@ func newContextCmd() *cobra.Command {
 
 func newContextRenameCmd() *cobra.Command {
 	var dir string
+	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "rename <file> <old-name> <new-name>",
 		Short: "Rename a context and move its per-context state (tags, alerts) to the new name",
@@ -53,6 +54,26 @@ func newContextRenameCmd() *cobra.Command {
 			updated, err := kubeconfig.RenameContext(cfg, oldName, newName)
 			if err != nil {
 				return err
+			}
+			if dryRun {
+				store, err := state.DefaultStore()
+				if err != nil {
+					return err
+				}
+				sc, _ := store.Load(cmd.Context())
+				ctxTags, ctxAlerts := 0, 0
+				if sc != nil {
+					if entry, ok := sc.GetEntry(oldID.StableHash, oldID.ContentHash); ok {
+						ctxTags = len(entry.ContextTags[oldName])
+						if _, has := entry.ContextAlerts[oldName]; has {
+							ctxAlerts = 1
+						}
+					}
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+					"[dry-run] would rename context %q -> %q in %s (moves %d per-context tag(s), %d per-context alert(s))\n",
+					oldName, newName, path, ctxTags, ctxAlerts)
+				return nil
 			}
 			if err := clientcmd.WriteToFile(*updated, path); err != nil {
 				return fmt.Errorf("write %s: %w", path, err)
@@ -103,12 +124,14 @@ func newContextRenameCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned change without touching the file or state")
 	return cmd
 }
 
 func newContextDeleteCmd() *cobra.Command {
 	var dir string
 	var keepOrphans bool
+	var dryRun bool
 	cmd := &cobra.Command{
 		Use:     "delete <file> <name>",
 		Aliases: []string{"remove", "rm"},
@@ -145,6 +168,30 @@ func newContextDeleteCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
+			}
+			if dryRun {
+				store, err := state.DefaultStore()
+				if err != nil {
+					return err
+				}
+				sc, _ := store.Load(cmd.Context())
+				ctxTags, ctxAlerts := 0, 0
+				orphansNote := ""
+				if !keepOrphans {
+					orphansNote = " (prunes unreferenced cluster/user)"
+				}
+				if sc != nil {
+					if entry, ok := sc.GetEntry(oldID.StableHash, oldID.ContentHash); ok {
+						ctxTags = len(entry.ContextTags[name])
+						if _, has := entry.ContextAlerts[name]; has {
+							ctxAlerts = 1
+						}
+					}
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+					"[dry-run] would delete context %q from %s%s (drops %d per-context tag(s), %d per-context alert(s))\n",
+					name, path, orphansNote, ctxTags, ctxAlerts)
+				return nil
 			}
 			if err := clientcmd.WriteToFile(*updated, path); err != nil {
 				return fmt.Errorf("write %s: %w", path, err)
@@ -185,6 +232,7 @@ func newContextDeleteCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
 	cmd.Flags().BoolVar(&keepOrphans, "keep-orphans", false, "Keep the referenced cluster/user even if no other context uses them")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned change without touching the file or state")
 	return cmd
 }
 

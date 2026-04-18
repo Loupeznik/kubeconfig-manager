@@ -9,6 +9,7 @@ kcm import <source> [flags]
 ### Options
 
 ```
+      --dry-run              Print the planned change without writing
   -h, --help                 help for import
       --into string          Destination kubeconfig (default: ~/.kube/config)
       --on-conflict string   error | skip | overwrite (default "error")

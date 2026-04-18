@@ -10,6 +10,7 @@ kcm context delete <file> <name> [flags]
 
 ```
       --dir string     Kubeconfig directory (default: ~/.kube)
+      --dry-run        Print the planned change without touching the file or state
   -h, --help           help for delete
       --keep-orphans   Keep the referenced cluster/user even if no other context uses them
 ```

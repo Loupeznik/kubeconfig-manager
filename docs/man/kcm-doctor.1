@@ -1,0 +1,22 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-doctor - Run diagnostic checks against the local kcm + kubectl setup
+
+
+.SH SYNOPSIS
+\fBkcm doctor [flags]\fP
+
+
+.SH DESCRIPTION
+Walks through the common misconfigurations in the order they bite users: kubectl/helm on PATH, shell hook installed, state file schema, active kubeconfig resolved, palette populated, stale state entries. Exits non-zero if any check fails (warnings alone do not fail the exit code).
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for doctor
+
+
+.SH SEE ALSO
+\fBkcm(1)\fP

@@ -15,6 +15,7 @@ import (
 func newImportCmd() *cobra.Command {
 	var into string
 	var onConflict string
+	var dryRun bool
 
 	cmd := &cobra.Command{
 		Use:   "import <source>",
@@ -54,6 +55,13 @@ func newImportCmd() *cobra.Command {
 				return err
 			}
 
+			if dryRun {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+					"[dry-run] would merge %s into %s (policy=%s; result: %d cluster(s), %d user(s), %d context(s))\n",
+					srcPath, destPath, onConflict,
+					len(merged.Clusters), len(merged.AuthInfos), len(merged.Contexts))
+				return nil
+			}
 			if err := clientcmd.WriteToFile(*merged, destPath); err != nil {
 				return fmt.Errorf("write %s: %w", destPath, err)
 			}
@@ -63,12 +71,14 @@ func newImportCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&into, "into", "", "Destination kubeconfig (default: ~/.kube/config)")
 	cmd.Flags().StringVar(&onConflict, "on-conflict", "error", "error | skip | overwrite")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned change without writing")
 	return cmd
 }
 
 func newSplitCmd() *cobra.Command {
 	var from string
 	var remove bool
+	var dryRun bool
 
 	cmd := &cobra.Command{
 		Use:   "split <context> <out-file>",
@@ -101,6 +111,16 @@ func newSplitCmd() *cobra.Command {
 				return fmt.Errorf("destination %s already exists (refusing to overwrite)", outPath)
 			}
 
+			if dryRun {
+				suffix := ""
+				if remove {
+					suffix = " and remove from " + srcPath
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+					"[dry-run] would extract context %q from %s to %s%s\n",
+					contextName, srcPath, outPath, suffix)
+				return nil
+			}
 			if err := clientcmd.WriteToFile(*extracted, outPath); err != nil {
 				return fmt.Errorf("write %s: %w", outPath, err)
 			}
@@ -122,12 +142,14 @@ func newSplitCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&from, "from", "", "Source kubeconfig (default: ~/.kube/config)")
 	cmd.Flags().BoolVar(&remove, "remove", false, "Remove the extracted context from the source file")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned change without writing")
 	return cmd
 }
 
 func newMergeCmd() *cobra.Command {
 	var onConflict string
 	var force bool
+	var dryRun bool
 
 	cmd := &cobra.Command{
 		Use:   "merge <a> <b> <out>",
@@ -159,6 +181,13 @@ func newMergeCmd() *cobra.Command {
 				return fmt.Errorf("destination %s already exists (pass --force to overwrite)", out)
 			}
 
+			if dryRun {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+					"[dry-run] would merge %s + %s -> %s (policy=%s; result: %d cluster(s), %d user(s), %d context(s))\n",
+					a, b, out, onConflict,
+					len(merged.Clusters), len(merged.AuthInfos), len(merged.Contexts))
+				return nil
+			}
 			if err := clientcmd.WriteToFile(*merged, out); err != nil {
 				return fmt.Errorf("write %s: %w", out, err)
 			}
@@ -168,6 +197,7 @@ func newMergeCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&onConflict, "on-conflict", "error", "error | skip | overwrite")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite the destination if it exists")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned change without writing")
 	return cmd
 }
 

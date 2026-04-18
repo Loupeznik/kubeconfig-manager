@@ -9,6 +9,7 @@ kcm merge <a> <b> <out> [flags]
 ### Options
 
 ```
+      --dry-run              Print the planned change without writing
       --force                Overwrite the destination if it exists
   -h, --help                 help for merge
       --on-conflict string   error | skip | overwrite (default "error")

@@ -18,6 +18,7 @@ import (
 func newRenameCmd() *cobra.Command {
 	var dir string
 	var force bool
+	var dryRun bool
 
 	cmd := &cobra.Command{
 		Use:   "rename <file> <new-name>",
@@ -50,6 +51,11 @@ func newRenameCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if dryRun {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[dry-run] would rename %s -> %s (state path_hint rebinds to %s)\n",
+					oldPath, newPath, filepath.Base(newPath))
+				return nil
+			}
 			if err := os.Rename(oldPath, newPath); err != nil {
 				return fmt.Errorf("rename: %w", err)
 			}
@@ -78,6 +84,7 @@ func newRenameCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite destination if it exists")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned change without touching the file or state")
 	cmd.ValidArgsFunction = func(c *cobra.Command, args []string, tc string) ([]string, cobra.ShellCompDirective) {
 		// Only the first positional (the source kubeconfig) is completable;
 		// the second positional is a free-form new filename.
