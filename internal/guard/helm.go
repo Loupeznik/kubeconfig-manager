@@ -100,17 +100,23 @@ func EvaluateHelm(ctx context.Context, store state.Store, kubeconfigEnv string, 
 	d.Policy = policy
 
 	for _, vp := range extractHelmValuesPaths(args) {
-		derived, ok := deriveNameFromPath(vp, policy.Pattern)
+		compareName, ok := deriveNameFromPatterns(vp, policy.Patterns)
 		if !ok {
-			continue // path doesn't match the template — silently skip
+			if !policy.GlobalFallback {
+				continue // no pattern matched and no global fallback — skip
+			}
+			// Tokenize the raw path itself. compareHelmNames splits on "/",
+			// "-", "_", ".", so the path contributes every segment as a token
+			// and env-token detection still works.
+			compareName = vp
 		}
-		sev, reason := compareHelmNames(derived, res.ContextName, res.ClusterName, policy.EnvTokens)
+		sev, reason := compareHelmNames(compareName, res.ContextName, res.ClusterName, policy.EnvTokens)
 		if sev == HelmMatchOK {
 			continue
 		}
 		d.Triggers = append(d.Triggers, HelmTrigger{
 			ValuesPath:    vp,
-			DerivedName:   derived,
+			DerivedName:   compareName,
 			ActiveContext: res.ContextName,
 			ActiveCluster: res.ClusterName,
 			Severity:      sev,
@@ -152,6 +158,18 @@ func splitCommaList(s string) []string {
 		}
 	}
 	return out
+}
+
+// deriveNameFromPatterns tries each pattern in order and returns the name
+// extracted from the first matching one. Returns ("", false) when no pattern
+// matches.
+func deriveNameFromPatterns(valuesPath string, patterns []string) (string, bool) {
+	for _, p := range patterns {
+		if name, ok := deriveNameFromPath(valuesPath, p); ok {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 // deriveNameFromPath extracts the cluster/env name from a values-file path by

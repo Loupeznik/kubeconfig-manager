@@ -13,8 +13,8 @@ The helm command has no idea your context is prod — it just applies the test v
 When the helm guard is enabled, `kcm helm <args>` does three things before invoking helm:
 
 1. Parses `-f` / `--values` flags from `args` (including the `--values=path` and `-f a,b,c` comma-list forms).
-2. Derives a cluster/env name from each values-file path using a configurable pattern (default `clusters/{name}/`). For `deploy/clusters/k8s-test-01/values.yaml` this yields `k8s-test-01`.
-3. Compares each derived name to the active kubectl context (and its cluster) using a token-based fuzzy match. If they contradict, `kcm` prompts for confirmation.
+2. Derives a cluster/env name from each values-file path by trying the configured patterns in order — the first match wins. Default pattern is `clusters/{name}/`, so `deploy/clusters/k8s-test-01/values.yaml` yields `k8s-test-01`. If no pattern matches and the *global fallback* is on, the raw path itself is tokenized instead.
+3. Compares each derived name (or raw path tokens) to the active kubectl context (and its cluster) using a token-based fuzzy match. If they contradict, `kcm` prompts for confirmation.
 
 The match has three outcomes:
 
@@ -50,18 +50,39 @@ kubeconfig-manager helm-guard show                            # global
 kubeconfig-manager helm-guard show --file ~/.kube/prod.yaml   # per-file with inheritance breakdown
 ```
 
-## Customizing the path pattern
+## Customizing path patterns
 
-Not every repo lays values files out as `clusters/<name>/`. Change the pattern globally or per-file — the `{name}` placeholder marks the capture group:
+Not every repo lays values files out as `clusters/<name>/`. You can configure a list of patterns — they're tried in order, first match wins. The `{name}` placeholder is the capture group (it stops at the next `/`).
+
+Replace the whole list:
 
 ```sh
-kubeconfig-manager helm-guard set-pattern "environments/{name}/"
-kubeconfig-manager helm-guard set-pattern "envs/{name}.yaml" --file prod
+kubeconfig-manager helm-guard set-patterns "environments/{name}/" "clusters/{name}/"
+kubeconfig-manager helm-guard set-patterns "envs/{name}.yaml" --file prod
+```
+
+Append or drop individual patterns:
+
+```sh
+kubeconfig-manager helm-guard add-pattern "deploy/{name}/values.yaml"
+kubeconfig-manager helm-guard remove-pattern "clusters/{name}/"
 ```
 
 The match is path-position-insensitive: `deploy/environments/prod-eu/values.yaml` and `environments/prod-eu/x.yaml` both match `environments/{name}/`.
 
-If no `-f` path matches the pattern, no name is derived and no alert fires for that invocation — the guard stays silent on paths it doesn't understand.
+### Global fallback (no pattern, match on path tokens)
+
+If your values files don't follow any directory convention (e.g. `helm/my-app.prod.yaml`), flip on the global fallback. When no pattern matches, the guard tokenizes the raw path — splitting on `/`, `-`, `_`, `.` — and compares those tokens directly against the active context/cluster and the environment-token list:
+
+```sh
+kubeconfig-manager helm-guard fallback on
+kubeconfig-manager helm-guard fallback off
+kubeconfig-manager helm-guard fallback on --file ~/.kube/prod.yaml
+```
+
+So `helm/my-app.test.yaml` with an active `prod-eu` context will still trigger a hard mismatch (path contains `test`, context contains `prod`).
+
+If both pattern matching and fallback fail to derive/overlap anything meaningful, no alert fires for that invocation — the guard stays silent on paths it doesn't understand.
 
 ## Routing plain `helm` through the guard
 
@@ -114,7 +135,10 @@ Per kubeconfig (under `entries[hash].helm_guard`) and globally (at state-file ro
 ```yaml
 helm_guard:
   enabled: true
-  pattern: "clusters/{name}/"
+  patterns:
+    - "clusters/{name}/"
+    - "envs/{name}.yaml"
+  global_fallback: true
   env_tokens: [prod, production, staging, dev, test, qa]
 
 entries:
@@ -122,5 +146,7 @@ entries:
     helm_guard:
       enabled: false   # explicit per-entry disable; overrides global
 ```
+
+State files written by v0.10.x used a single `pattern:` scalar field instead of `patterns:`. That form still loads cleanly — on first write, it's migrated to the list form.
 
 Per-entry fields left empty fall back to global, which in turn falls back to built-in defaults. See [`docs/state-file.md`](state-file.md) for the full schema.

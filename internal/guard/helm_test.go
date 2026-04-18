@@ -77,6 +77,35 @@ func TestDeriveNameFromPath(t *testing.T) {
 	}
 }
 
+func TestDeriveNameFromPatterns(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		patterns []string
+		want     string
+		ok       bool
+	}{
+		{"first pattern wins", "envs/prod-eu/values.yaml",
+			[]string{"envs/{name}/", "clusters/{name}/"}, "prod-eu", true},
+		{"second pattern matches", "repo/clusters/prod-eu/values.yaml",
+			[]string{"envs/{name}/", "clusters/{name}/"}, "prod-eu", true},
+		{"none match", "weird/layout/values.yaml",
+			[]string{"envs/{name}/", "clusters/{name}/"}, "", false},
+		{"empty list", "clusters/prod/values.yaml", nil, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := deriveNameFromPatterns(tt.path, tt.patterns)
+			if ok != tt.ok {
+				t.Fatalf("ok: got %v, want %v", ok, tt.ok)
+			}
+			if got != tt.want {
+				t.Errorf("name: got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCompareHelmNamesHardMismatch(t *testing.T) {
 	sev, reason := compareHelmNames("k8s-test-01", "k8s-prod-01", "k8s-prod-01", state.DefaultEnvTokens())
 	if sev != HelmMatchHard {
@@ -234,8 +263,8 @@ func TestEvaluateHelmCustomPatternPerEntry(t *testing.T) {
 		cfg.Entries[id.StableHash] = state.Entry{
 			PathHint: "prod.yaml",
 			HelmGuard: &state.HelmGuard{
-				Enabled: true,
-				Pattern: "envs/{name}/",
+				Enabled:  true,
+				Patterns: []string{"envs/{name}/"},
 			},
 		}
 		return nil
@@ -283,6 +312,112 @@ func TestEvaluateHelmNoMismatchWhenPathMatchesContext(t *testing.T) {
 	}
 	if d.Alert() {
 		t.Errorf("no alert expected; triggers: %+v", d.Triggers)
+	}
+}
+
+func TestEvaluateHelmMultiplePatternsPerEntry(t *testing.T) {
+	dir := t.TempDir()
+	path := writeHelmKubeconfig(t, dir, "prod.yaml")
+	store := newTestStore(t)
+
+	id, err := kubeconfig.IdentifyFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Mutate(context.Background(), func(cfg *state.Config) error {
+		cfg.Entries[id.StableHash] = state.Entry{
+			PathHint: "prod.yaml",
+			HelmGuard: &state.HelmGuard{
+				Enabled:  true,
+				Patterns: []string{"envs/{name}/", "clusters/{name}/"},
+			},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// First pattern matches this layout — hard mismatch fires.
+	d, err := EvaluateHelm(context.Background(), store, path,
+		[]string{"upgrade", "-f", "deploy/envs/test-eu/values.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.Alert() {
+		t.Error("expected alert via first pattern")
+	}
+
+	// Second pattern matches this layout — also fires.
+	d, err = EvaluateHelm(context.Background(), store, path,
+		[]string{"upgrade", "-f", "deploy/clusters/test-eu/values.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.Alert() {
+		t.Error("expected alert via second pattern")
+	}
+
+	// Neither pattern matches and fallback is off — silent.
+	d, err = EvaluateHelm(context.Background(), store, path,
+		[]string{"upgrade", "-f", "weird/layout/test-eu.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Alert() {
+		t.Error("no pattern matched and fallback disabled; alert should not fire")
+	}
+}
+
+func TestEvaluateHelmGlobalFallbackCatchesIrregularLayout(t *testing.T) {
+	dir := t.TempDir()
+	path := writeHelmKubeconfig(t, dir, "prod.yaml")
+	store := newTestStore(t)
+
+	if err := store.Mutate(context.Background(), func(cfg *state.Config) error {
+		cfg.HelmGuard = state.HelmGuard{
+			Enabled:        true,
+			GlobalFallback: true,
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Path doesn't match the default "clusters/{name}/" pattern, but the
+	// fallback tokenizes the whole path and sees "test" vs the "prod" context.
+	d, err := EvaluateHelm(context.Background(), store, path,
+		[]string{"upgrade", "-f", "helm/my-app.test.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.Alert() {
+		t.Fatal("expected alert from fallback tokenization")
+	}
+	if d.Triggers[0].Severity != HelmMatchHard {
+		t.Errorf("severity: got %v, want HelmMatchHard", d.Triggers[0].Severity)
+	}
+}
+
+func TestEvaluateHelmGlobalFallbackDisabledStillSilent(t *testing.T) {
+	dir := t.TempDir()
+	path := writeHelmKubeconfig(t, dir, "prod.yaml")
+	store := newTestStore(t)
+
+	if err := store.Mutate(context.Background(), func(cfg *state.Config) error {
+		cfg.HelmGuard = state.HelmGuard{Enabled: true}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Same irregular layout as above; without fallback, silence.
+	d, err := EvaluateHelm(context.Background(), store, path,
+		[]string{"upgrade", "-f", "helm/my-app.test.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Alert() {
+		t.Error("fallback is off; no alert expected for unmatched path")
 	}
 }
 

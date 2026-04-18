@@ -1,9 +1,9 @@
-## kcm helm-guard set-pattern
+## kcm helm-guard remove-pattern
 
-Set the path pattern used to derive cluster/env names (e.g. "clusters/{name}/")
+Drop one or more patterns from the existing list
 
 ```
-kcm helm-guard set-pattern <pattern> [flags]
+kcm helm-guard remove-pattern <pattern...> [flags]
 ```
 
 ### Options
@@ -11,7 +11,7 @@ kcm helm-guard set-pattern <pattern> [flags]
 ```
       --dir string    Kubeconfig directory (default: ~/.kube)
       --file string   Apply only to this kubeconfig (default: global)
-  -h, --help          help for set-pattern
+  -h, --help          help for remove-pattern
 ```
 
 ### SEE ALSO

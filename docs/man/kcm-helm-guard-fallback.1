@@ -2,15 +2,15 @@
 .TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
 
 .SH NAME
-kcm-helm-guard-set-pattern - Set the path pattern used to derive cluster/env names (e.g. "clusters/{name}/")
+kcm-helm-guard-fallback - Toggle the pattern-less global fallback (compare path tokens directly when no pattern matches)
 
 
 .SH SYNOPSIS
-\fBkcm helm-guard set-pattern  [flags]\fP
+\fBkcm helm-guard fallback  [flags]\fP
 
 
 .SH DESCRIPTION
-Set the path pattern used to derive cluster/env names (e.g. "clusters/{name}/")
+Toggle the pattern-less global fallback (compare path tokens directly when no pattern matches)
 
 
 .SH OPTIONS
@@ -23,7 +23,7 @@ Set the path pattern used to derive cluster/env names (e.g. "clusters/{name}/")
 
 .PP
 \fB-h\fP, \fB--help\fP[=false]
-	help for set-pattern
+	help for fallback
 
 
 .SH SEE ALSO

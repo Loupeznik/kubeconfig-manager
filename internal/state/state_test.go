@@ -213,6 +213,35 @@ func TestEnsurePaletteIdempotent(t *testing.T) {
 	}
 }
 
+func TestHelmGuardLegacyPatternFieldMigrates(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	// Hand-crafted legacy state file with the single-string `pattern:` field
+	// that earlier versions wrote.
+	legacy := []byte(`version: 1
+helm_guard:
+  enabled: true
+  pattern: "envs/{name}/"
+  env_tokens: [prod, test]
+entries: {}
+`)
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewFileStore(path)
+	cfg, err := s.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.HelmGuard.Enabled {
+		t.Error("enabled flag lost after legacy load")
+	}
+	if len(cfg.HelmGuard.Patterns) != 1 || cfg.HelmGuard.Patterns[0] != "envs/{name}/" {
+		t.Errorf("legacy pattern did not migrate: %v", cfg.HelmGuard.Patterns)
+	}
+}
+
 func TestMigrateRejectsFutureVersion(t *testing.T) {
 	cfg := &Config{Version: 99}
 	if err := migrate(cfg); err == nil {

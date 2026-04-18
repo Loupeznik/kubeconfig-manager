@@ -648,7 +648,7 @@ func TestHelmGuardDefaultShow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Global") || !strings.Contains(out, "Enabled:  false") {
+	if !strings.Contains(out, "Global") || !strings.Contains(out, "Enabled:          false") {
 		t.Errorf("default global helm-guard should be disabled, got: %s", out)
 	}
 	if !strings.Contains(out, "clusters/{name}/") {
@@ -666,7 +666,7 @@ func TestHelmGuardGlobalEnableDisable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Enabled:  true") {
+	if !strings.Contains(out, "Enabled:          true") {
 		t.Errorf("expected enabled, got: %s", out)
 	}
 
@@ -677,7 +677,7 @@ func TestHelmGuardGlobalEnableDisable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Enabled:  false") {
+	if !strings.Contains(out, "Enabled:          false") {
 		t.Errorf("expected disabled after disable, got: %s", out)
 	}
 }
@@ -725,6 +725,75 @@ func TestHelmGuardSetPatternValidates(t *testing.T) {
 	}
 	if !strings.Contains(out, "environments/{name}/") {
 		t.Errorf("pattern not persisted: %s", out)
+	}
+}
+
+func TestHelmGuardMultiplePatternsAndFallback(t *testing.T) {
+	stateHome := t.TempDir()
+
+	// Replace the default list with two patterns.
+	if _, _, err := runCmdInState(t, stateHome, "helm-guard", "set-patterns",
+		"envs/{name}/", "clusters/{name}/"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := runCmdInState(t, stateHome, "helm-guard", "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "envs/{name}/") || !strings.Contains(out, "clusters/{name}/") {
+		t.Errorf("both patterns should appear in show output: %s", out)
+	}
+
+	// Add one more.
+	if _, _, err := runCmdInState(t, stateHome, "helm-guard", "add-pattern", "deploy/{name}.yaml"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err = runCmdInState(t, stateHome, "helm-guard", "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "deploy/{name}.yaml") {
+		t.Errorf("added pattern missing: %s", out)
+	}
+
+	// Remove one.
+	if _, _, err := runCmdInState(t, stateHome, "helm-guard", "remove-pattern", "envs/{name}/"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err = runCmdInState(t, stateHome, "helm-guard", "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "envs/{name}/") {
+		t.Errorf("removed pattern still present: %s", out)
+	}
+
+	// Toggle fallback.
+	if _, _, err := runCmdInState(t, stateHome, "helm-guard", "fallback", "on"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err = runCmdInState(t, stateHome, "helm-guard", "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Global fallback:  true") {
+		t.Errorf("fallback should be on: %s", out)
+	}
+
+	if _, _, err := runCmdInState(t, stateHome, "helm-guard", "fallback", "off"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err = runCmdInState(t, stateHome, "helm-guard", "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Global fallback:  false") {
+		t.Errorf("fallback should be off: %s", out)
+	}
+
+	// Invalid pattern (no placeholder) rejected.
+	if _, _, err := runCmdInState(t, stateHome, "helm-guard", "add-pattern", "no-placeholder"); err == nil {
+		t.Error("expected error for pattern without {name}")
 	}
 }
 

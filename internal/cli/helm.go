@@ -66,7 +66,10 @@ func newHelmGuardCmd() *cobra.Command {
 		newHelmGuardEnableCmd(),
 		newHelmGuardDisableCmd(),
 		newHelmGuardShowCmd(),
-		newHelmGuardSetPatternCmd(),
+		newHelmGuardSetPatternsCmd(),
+		newHelmGuardAddPatternCmd(),
+		newHelmGuardRemovePatternCmd(),
+		newHelmGuardFallbackCmd(),
 	)
 	return cmd
 }
@@ -108,26 +111,159 @@ func newHelmGuardDisableCmd() *cobra.Command {
 	return cmd
 }
 
-func newHelmGuardSetPatternCmd() *cobra.Command {
+func newHelmGuardSetPatternsCmd() *cobra.Command {
 	var dir, file string
 	cmd := &cobra.Command{
-		Use:   "set-pattern <pattern>",
-		Short: "Set the path pattern used to derive cluster/env names (e.g. \"clusters/{name}/\")",
-		Args:  cobra.ExactArgs(1),
+		Use:     "set-patterns <pattern...>",
+		Aliases: []string{"set-pattern"},
+		Short:   "Replace the path-pattern list used to derive cluster/env names",
+		Long: "Replaces the entire pattern list with the given patterns. Each pattern " +
+			"must contain the {name} placeholder (capture stops at the next slash). " +
+			"Patterns are tried in order and the first match wins. See also add-pattern, " +
+			"remove-pattern, fallback.",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			pattern := args[0]
-			if !strings.Contains(pattern, "{name}") {
-				return fmt.Errorf("pattern %q must contain the {name} placeholder", pattern)
+			if err := validatePatterns(args); err != nil {
+				return err
 			}
+			patterns := append([]string(nil), args...)
 			return mutateHelmGuard(cmd, dir, file, func(hg *state.HelmGuard) {
-				hg.Pattern = pattern
-			}, "pattern set to "+pattern)
+				hg.Patterns = patterns
+			}, "patterns set to "+strings.Join(patterns, ", "))
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
 	cmd.Flags().StringVar(&file, "file", "", "Apply only to this kubeconfig (default: global)")
 	_ = cmd.RegisterFlagCompletionFunc("file", completionFuncForFileFlag)
 	return cmd
+}
+
+func newHelmGuardAddPatternCmd() *cobra.Command {
+	var dir, file string
+	cmd := &cobra.Command{
+		Use:   "add-pattern <pattern...>",
+		Short: "Append one or more patterns to the existing list",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validatePatterns(args); err != nil {
+				return err
+			}
+			var added []string
+			if err := mutateHelmGuard(cmd, dir, file, func(hg *state.HelmGuard) {
+				existing := map[string]bool{}
+				for _, p := range hg.Patterns {
+					existing[p] = true
+				}
+				for _, p := range args {
+					if existing[p] {
+						continue
+					}
+					existing[p] = true
+					hg.Patterns = append(hg.Patterns, p)
+					added = append(added, p)
+				}
+			}, ""); err != nil {
+				return err
+			}
+			if len(added) == 0 {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no new patterns added (already present)")
+			} else {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "added patterns: %s\n", strings.Join(added, ", "))
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
+	cmd.Flags().StringVar(&file, "file", "", "Apply only to this kubeconfig (default: global)")
+	_ = cmd.RegisterFlagCompletionFunc("file", completionFuncForFileFlag)
+	return cmd
+}
+
+func newHelmGuardRemovePatternCmd() *cobra.Command {
+	var dir, file string
+	cmd := &cobra.Command{
+		Use:   "remove-pattern <pattern...>",
+		Short: "Drop one or more patterns from the existing list",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			drop := map[string]bool{}
+			for _, p := range args {
+				drop[p] = true
+			}
+			var removed []string
+			if err := mutateHelmGuard(cmd, dir, file, func(hg *state.HelmGuard) {
+				kept := hg.Patterns[:0]
+				for _, p := range hg.Patterns {
+					if drop[p] {
+						removed = append(removed, p)
+						continue
+					}
+					kept = append(kept, p)
+				}
+				hg.Patterns = kept
+			}, ""); err != nil {
+				return err
+			}
+			if len(removed) == 0 {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no matching patterns to remove")
+			} else {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "removed patterns: %s\n", strings.Join(removed, ", "))
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
+	cmd.Flags().StringVar(&file, "file", "", "Apply only to this kubeconfig (default: global)")
+	_ = cmd.RegisterFlagCompletionFunc("file", completionFuncForFileFlag)
+	return cmd
+}
+
+func newHelmGuardFallbackCmd() *cobra.Command {
+	var dir, file string
+	cmd := &cobra.Command{
+		Use:   "fallback <on|off>",
+		Short: "Toggle the pattern-less global fallback (compare path tokens directly when no pattern matches)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			val, err := parseOnOff(args[0])
+			if err != nil {
+				return err
+			}
+			label := "off"
+			if val {
+				label = "on"
+			}
+			return mutateHelmGuard(cmd, dir, file, func(hg *state.HelmGuard) {
+				hg.GlobalFallback = val
+			}, "global fallback "+label)
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
+	cmd.Flags().StringVar(&file, "file", "", "Apply only to this kubeconfig (default: global)")
+	_ = cmd.RegisterFlagCompletionFunc("file", completionFuncForFileFlag)
+	cmd.ValidArgs = []string{"on", "off"}
+	return cmd
+}
+
+// validatePatterns rejects patterns missing the {name} placeholder. Shared
+// by set-patterns and add-pattern so the error message stays consistent.
+func validatePatterns(patterns []string) error {
+	for _, p := range patterns {
+		if !strings.Contains(p, "{name}") {
+			return fmt.Errorf("pattern %q must contain the {name} placeholder", p)
+		}
+	}
+	return nil
+}
+
+func parseOnOff(s string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "on", "true", "yes", "enable", "enabled", "1":
+		return true, nil
+	case "off", "false", "no", "disable", "disabled", "0":
+		return false, nil
+	}
+	return false, fmt.Errorf("expected on|off, got %q", s)
 }
 
 func newHelmGuardShowCmd() *cobra.Command {
@@ -181,18 +317,21 @@ func newHelmGuardShowCmd() *cobra.Command {
 
 func printHelmGuard(out io.Writer, label string, hg state.HelmGuard) {
 	_, _ = fmt.Fprintf(out, "%s:\n", label)
-	_, _ = fmt.Fprintf(out, "  Enabled:  %t\n", hg.Enabled)
-	pattern := hg.Pattern
-	if pattern == "" {
-		pattern = state.DefaultHelmPattern + " (default)"
+	_, _ = fmt.Fprintf(out, "  Enabled:          %t\n", hg.Enabled)
+	patterns := hg.Patterns
+	patternSuffix := ""
+	if len(patterns) == 0 {
+		patterns = []string{state.DefaultHelmPattern}
+		patternSuffix = " (default)"
 	}
-	_, _ = fmt.Fprintf(out, "  Pattern:  %s\n", pattern)
+	_, _ = fmt.Fprintf(out, "  Patterns:         %s%s\n", strings.Join(patterns, ", "), patternSuffix)
+	_, _ = fmt.Fprintf(out, "  Global fallback:  %t\n", hg.GlobalFallback)
 	tokens := hg.EnvTokens
 	if len(tokens) == 0 {
 		tokens = state.DefaultEnvTokens()
-		_, _ = fmt.Fprintf(out, "  Tokens:   %s (default)\n", strings.Join(tokens, ", "))
+		_, _ = fmt.Fprintf(out, "  Tokens:           %s (default)\n", strings.Join(tokens, ", "))
 	} else {
-		_, _ = fmt.Fprintf(out, "  Tokens:   %s\n", strings.Join(tokens, ", "))
+		_, _ = fmt.Fprintf(out, "  Tokens:           %s\n", strings.Join(tokens, ", "))
 	}
 }
 
@@ -208,7 +347,9 @@ func mutateHelmGuard(cmd *cobra.Command, dir, file string, mutate func(*state.He
 	return store.Mutate(cmd.Context(), func(cfg *state.Config) error {
 		if file == "" {
 			mutate(&cfg.HelmGuard)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "helm-guard %s (%s)\n", status, scope)
+			if status != "" {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "helm-guard %s (%s)\n", status, scope)
+			}
 			return nil
 		}
 		resolvedDir, err := resolveDir(dir)
@@ -231,7 +372,9 @@ func mutateHelmGuard(cmd *cobra.Command, dir, file string, mutate func(*state.He
 		entry.PathHint = filepath.Base(path)
 		entry.Touch()
 		cfg.Entries[id.StableHash] = entry
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "helm-guard %s for %s\n", status, path)
+		if status != "" {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "helm-guard %s for %s\n", status, path)
+		}
 		return nil
 	})
 }

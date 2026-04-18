@@ -4,7 +4,11 @@
 // that compute effective (per-context, per-file, or global) values.
 package state
 
-import "time"
+import (
+	"time"
+
+	"gopkg.in/yaml.v3"
+)
 
 // CurrentVersion is the state-file schema version this build supports. Loading
 // a file with a higher version fails; lower versions are lazily migrated on
@@ -48,17 +52,50 @@ type Alerts struct {
 // Applied at two scopes with per-entry overriding global (see ResolveHelmGuard).
 type HelmGuard struct {
 	Enabled bool `yaml:"enabled"`
-	// Pattern is the values-file path template used to extract a name, e.g.
-	// "clusters/{name}/" matches ".../clusters/prod-eu/values.yaml" and
-	// produces "prod-eu". When empty, falls back to the global pattern (or
-	// DefaultHelmPattern if global is also empty).
-	Pattern string `yaml:"pattern,omitempty"`
+	// Patterns is the ordered list of values-file path templates used to
+	// extract a cluster/env name. Each pattern must contain one "{name}"
+	// placeholder (capture group stops at the next slash). The first pattern
+	// that matches a given values-file path wins. When empty, falls back to
+	// the global list (or a single DefaultHelmPattern if global is also empty).
+	Patterns []string `yaml:"patterns,omitempty"`
+	// GlobalFallback enables a pattern-less fallback: if none of Patterns
+	// matches a values-file path, the path itself is tokenized and compared
+	// against the active context/cluster tokens. Catches irregular layouts
+	// (e.g. "helm/my-app.prod.yaml") without requiring a custom pattern.
+	GlobalFallback bool `yaml:"global_fallback,omitempty"`
 	// EnvTokens is the set of "environment-like" tokens that, if they appear
 	// on one side of the comparison but not the other, mark a high-severity
 	// mismatch. When empty, falls back to global then DefaultEnvTokens.
 	EnvTokens []string `yaml:"env_tokens,omitempty"`
 	// RequireConfirmation reads as true unless explicitly set to false.
 	RequireConfirmation bool `yaml:"require_confirmation,omitempty"`
+}
+
+// UnmarshalYAML accepts the legacy `pattern: "foo"` scalar field (pre-v0.11)
+// and folds it into Patterns so on-disk state from earlier versions keeps
+// working. Marshaling is never done in the legacy form.
+func (h *HelmGuard) UnmarshalYAML(node *yaml.Node) error {
+	type raw struct {
+		Enabled             bool     `yaml:"enabled"`
+		Patterns            []string `yaml:"patterns,omitempty"`
+		Pattern             string   `yaml:"pattern,omitempty"`
+		GlobalFallback      bool     `yaml:"global_fallback,omitempty"`
+		EnvTokens           []string `yaml:"env_tokens,omitempty"`
+		RequireConfirmation bool     `yaml:"require_confirmation,omitempty"`
+	}
+	var r raw
+	if err := node.Decode(&r); err != nil {
+		return err
+	}
+	h.Enabled = r.Enabled
+	h.Patterns = r.Patterns
+	if len(h.Patterns) == 0 && r.Pattern != "" {
+		h.Patterns = []string{r.Pattern}
+	}
+	h.GlobalFallback = r.GlobalFallback
+	h.EnvTokens = r.EnvTokens
+	h.RequireConfirmation = r.RequireConfirmation
+	return nil
 }
 
 // DefaultHelmPattern is the fallback values-file path template.
@@ -97,11 +134,15 @@ func NewConfig() *Config {
 // ResolveHelmGuard returns the effective HelmGuard for this entry, falling
 // back from per-entry to global. A per-entry nil means "inherit global";
 // a per-entry struct with Enabled=false is an explicit override to suppress.
+//
+// GlobalFallback uses OR-semantics (per-entry OR global): either side
+// turning it on enables the pattern-less fallback. This avoids a tri-state
+// field while keeping the common "turn it on once globally" setup simple.
 func (e Entry) ResolveHelmGuard(global HelmGuard) HelmGuard {
 	base := global
 	if e.HelmGuard == nil {
-		if base.Pattern == "" {
-			base.Pattern = DefaultHelmPattern
+		if len(base.Patterns) == 0 {
+			base.Patterns = []string{DefaultHelmPattern}
 		}
 		if len(base.EnvTokens) == 0 {
 			base.EnvTokens = DefaultEnvTokens()
@@ -109,11 +150,11 @@ func (e Entry) ResolveHelmGuard(global HelmGuard) HelmGuard {
 		return base
 	}
 	out := *e.HelmGuard
-	if out.Pattern == "" {
-		out.Pattern = base.Pattern
+	if len(out.Patterns) == 0 {
+		out.Patterns = base.Patterns
 	}
-	if out.Pattern == "" {
-		out.Pattern = DefaultHelmPattern
+	if len(out.Patterns) == 0 {
+		out.Patterns = []string{DefaultHelmPattern}
 	}
 	if len(out.EnvTokens) == 0 {
 		out.EnvTokens = base.EnvTokens
@@ -121,6 +162,7 @@ func (e Entry) ResolveHelmGuard(global HelmGuard) HelmGuard {
 	if len(out.EnvTokens) == 0 {
 		out.EnvTokens = DefaultEnvTokens()
 	}
+	out.GlobalFallback = out.GlobalFallback || base.GlobalFallback
 	return out
 }
 
