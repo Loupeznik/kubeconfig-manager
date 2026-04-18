@@ -189,6 +189,8 @@ func newTagCmd() *cobra.Command {
 	for _, c := range []*cobra.Command{addCmd, removeCmd, listCmd} {
 		c.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
 		c.Flags().StringVar(&contextName, "context", "", "Apply to this context only (default: file-level)")
+		c.ValidArgsFunction = completeKubeconfigNames
+		_ = c.RegisterFlagCompletionFunc("context", completeContextsForArgIdx(0))
 	}
 	cmd.AddCommand(addCmd, removeCmd, listCmd, newTagPaletteCmd())
 	return cmd
@@ -228,9 +230,10 @@ func newTagPaletteCmd() *cobra.Command {
 	}
 
 	removeCmd := &cobra.Command{
-		Use:   "remove <tag...>",
-		Short: "Remove tags from the palette (also scrubs them from every entry)",
-		Args:  cobra.MinimumNArgs(1),
+		Use:               "remove <tag...>",
+		Short:             "Remove tags from the palette (also scrubs them from every entry)",
+		Args:              cobra.MinimumNArgs(1),
+		ValidArgsFunction: completePaletteTags,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, err := state.DefaultStore()
 			if err != nil {
@@ -431,6 +434,8 @@ func newAlertCmd() *cobra.Command {
 	for _, c := range []*cobra.Command{enableCmd, disableCmd, showCmd} {
 		c.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
 		c.Flags().StringVar(&contextName, "context", "", "Apply to this context only (default: file-level)")
+		c.ValidArgsFunction = completeKubeconfigNames
+		_ = c.RegisterFlagCompletionFunc("context", completeContextsForArgIdx(0))
 	}
 	cmd.AddCommand(enableCmd, disableCmd, showCmd)
 	return cmd
@@ -520,6 +525,14 @@ func newRenameCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite destination if it exists")
+	cmd.ValidArgsFunction = func(c *cobra.Command, args []string, tc string) ([]string, cobra.ShellCompDirective) {
+		// Only the first positional (the source kubeconfig) is completable;
+		// the second positional is a free-form new filename.
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return completeKubeconfigNames(c, args, tc)
+	}
 	return cmd
 }
 

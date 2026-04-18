@@ -49,6 +49,7 @@ func newUseCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
 	cmd.Flags().StringVar(&shellFlag, "shell", "", "Shell to emit for: bash, zsh, pwsh (auto-detected if unset)")
+	cmd.ValidArgsFunction = completeKubeconfigNames
 	return cmd
 }
 

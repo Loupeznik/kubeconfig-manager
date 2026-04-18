@@ -101,6 +101,7 @@ func newShowCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory for bare-name lookups (default: ~/.kube)")
+	cmd.ValidArgsFunction = completeKubeconfigNames
 	return cmd
 }
 
