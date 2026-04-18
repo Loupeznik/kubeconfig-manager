@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -249,6 +250,62 @@ func TestMigrateRejectsFutureVersion(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsFutureVersionOnDisk(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("version: 99\nentries: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewFileStore(path)
+	_, err := s.Load(ctx)
+	if err == nil {
+		t.Fatal("expected Load to refuse future schema version")
+	}
+}
+
+func TestLoadRejectsMalformedYAML(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	// Unbalanced bracket / colon-less mapping → yaml.v3 parse error.
+	if err := os.WriteFile(path, []byte("version: 1\nentries: [this: is not valid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewFileStore(path)
+	_, err := s.Load(ctx)
+	if err == nil {
+		t.Fatal("expected parse error on malformed YAML")
+	}
+	if !strings.Contains(err.Error(), "parse state") {
+		t.Errorf("error should mention parse state: %v", err)
+	}
+}
+
+func TestLoadToleratesUnknownTopLevelKeys(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	// yaml.v3 is non-strict by default — unknown keys are silently dropped.
+	// We depend on this so users can hand-edit without us rejecting newlines
+	// or comments they add.
+	doc := `version: 1
+future_field: hello
+entries:
+  "sha256:abc":
+    path_hint: "prod.yaml"
+    tags: ["prod"]
+`
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewFileStore(path)
+	cfg, err := s.Load(ctx)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if e := cfg.Entries["sha256:abc"]; e.PathHint != "prod.yaml" || len(e.Tags) != 1 {
+		t.Errorf("entry lost when unknown top-level key present: %+v", e)
+	}
+}
+
 func TestConcurrentMutatesAreSerializedByLock(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
@@ -277,5 +334,126 @@ func TestConcurrentMutatesAreSerializedByLock(t *testing.T) {
 	}
 	if len(cfg.Entries) != n {
 		t.Errorf("entries: got %d, want %d (lock may have failed)", len(cfg.Entries), n)
+	}
+}
+
+// TestConcurrentMutatesAllFields writes to Tags, ContextTags, ContextAlerts,
+// and HelmGuard simultaneously. Past regressions have been map-nil-deref
+// panics on first access — the test exercises every map that a concurrent
+// caller might touch on a fresh entry.
+func TestConcurrentMutatesAllFields(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	const n = 20
+	var wg sync.WaitGroup
+	wg.Add(n)
+	hash := "sha256:shared"
+	for i := 0; i < n; i++ {
+		kind := i % 4
+		go func(k int) {
+			defer wg.Done()
+			_ = s.Mutate(ctx, func(cfg *Config) error {
+				entry := cfg.Entries[hash]
+				switch k {
+				case 0:
+					entry.Tags = append(entry.Tags, "t")
+				case 1:
+					if entry.ContextTags == nil {
+						entry.ContextTags = map[string][]string{}
+					}
+					entry.ContextTags["ctx"] = append(entry.ContextTags["ctx"], "c")
+				case 2:
+					if entry.ContextAlerts == nil {
+						entry.ContextAlerts = map[string]Alerts{}
+					}
+					a := entry.ContextAlerts["ctx"]
+					a.Enabled = true
+					entry.ContextAlerts["ctx"] = a
+				case 3:
+					if entry.HelmGuard == nil {
+						entry.HelmGuard = &HelmGuard{}
+					}
+					entry.HelmGuard.Enabled = true
+					entry.HelmGuard.Patterns = append(entry.HelmGuard.Patterns, "p/{name}/")
+				}
+				entry.Touch()
+				cfg.Entries[hash] = entry
+				return nil
+			})
+		}(kind)
+	}
+	wg.Wait()
+
+	cfg, err := s.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := cfg.Entries[hash]
+	if !ok {
+		t.Fatal("shared entry missing after concurrent writes")
+	}
+	if len(entry.Tags) == 0 {
+		t.Error("tags never persisted")
+	}
+	if entry.HelmGuard == nil || !entry.HelmGuard.Enabled {
+		t.Error("helm_guard never persisted")
+	}
+	if _, has := entry.ContextAlerts["ctx"]; !has {
+		t.Error("context_alerts never persisted")
+	}
+	if len(entry.ContextTags["ctx"]) == 0 {
+		t.Error("context_tags never persisted")
+	}
+}
+
+// ---- Tag edge cases (2.5) --------------------------------------------------
+
+func TestNormalizeTagTrimsWhitespace(t *testing.T) {
+	e := &Entry{}
+	added := e.AddTags("  spaced  ", "\tprod\n", "  ")
+	if len(added) != 2 {
+		t.Errorf("added: got %v, want [spaced prod]", added)
+	}
+	if len(e.Tags) != 2 || e.Tags[0] != "spaced" || e.Tags[1] != "prod" {
+		t.Errorf("normalized tags: %v", e.Tags)
+	}
+}
+
+func TestAddTagsTreatsCasesAsDistinct(t *testing.T) {
+	// Current behavior: normalization trims only whitespace, does not
+	// lowercase. "Prod" and "prod" are different tags. This test locks that
+	// behavior in — if we ever switch to case-folding we should bump state
+	// version and migrate.
+	e := &Entry{}
+	added := e.AddTags("Prod", "prod")
+	if len(added) != 2 {
+		t.Errorf("added: got %v, want both kept", added)
+	}
+}
+
+func TestTagsRoundTripUnicodeAndLongNames(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	long := strings.Repeat("a", 200)
+	unicode := "prod-日本-🚀"
+	if err := s.Mutate(ctx, func(cfg *Config) error {
+		cfg.AvailableTags = []string{long, unicode}
+		cfg.Entries["sha256:abc"] = Entry{Tags: []string{long, unicode}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := s.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.AvailableTags) != 2 ||
+		cfg.AvailableTags[0] != long || cfg.AvailableTags[1] != unicode {
+		t.Errorf("palette round-trip changed tags: %v", cfg.AvailableTags)
+	}
+	if e := cfg.Entries["sha256:abc"]; len(e.Tags) != 2 ||
+		e.Tags[0] != long || e.Tags[1] != unicode {
+		t.Errorf("entry round-trip changed tags: %v", e.Tags)
 	}
 }

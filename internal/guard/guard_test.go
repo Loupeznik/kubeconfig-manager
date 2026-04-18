@@ -302,6 +302,54 @@ func TestContextAlertHonorsArgContextFlag(t *testing.T) {
 	}
 }
 
+func TestContextAlertArgOverrideShadowsCurrentContextPolicy(t *testing.T) {
+	// Current-context is "prod"; a --context flag points at "prod-us" which
+	// has its own per-context override. The guard should honor prod-us's
+	// policy, not prod's. Locks behavior: ExtractContext > current-context.
+	dir := t.TempDir()
+	path := writeKubeconfig(t, dir, "prod.yaml")
+	// Extend the kubeconfig with a second context so ResolveClusterName
+	// doesn't drop the alert for an unknown context.
+	extra := `- name: prod-us
+    context:
+      cluster: prod-cluster
+      user: prod-user
+`
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	augmented := strings.Replace(string(data),
+		"contexts:\n  - name: prod",
+		"contexts:\n  "+extra+"  - name: prod", 1)
+	if err := os.WriteFile(path, []byte(augmented), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store := newTestStore(t)
+	// File-level enabled for "get" (won't fire on delete). Per-context for
+	// prod-us enables "delete". If the guard looked only at current-context,
+	// "delete" wouldn't fire.
+	seedEntry(t, store, path, state.Entry{
+		Alerts: state.Alerts{Enabled: true, BlockedVerbs: []string{"get"}},
+		ContextAlerts: map[string]state.Alerts{
+			"prod-us": {Enabled: true, BlockedVerbs: []string{"delete"}},
+		},
+	})
+
+	d, err := Evaluate(context.Background(), store, path,
+		[]string{"--context", "prod-us", "delete", "pod", "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.Alert() {
+		t.Fatal("expected prod-us context policy to fire via --context override")
+	}
+	if d.Triggers[0].ContextName != "prod-us" {
+		t.Errorf("context: got %q, want prod-us", d.Triggers[0].ContextName)
+	}
+}
+
 func TestExtractContext(t *testing.T) {
 	cases := []struct {
 		args []string

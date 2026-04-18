@@ -1,0 +1,76 @@
+# End-to-end prune flow: create state entries, delete their kubeconfig files,
+# ensure `kcm prune` reports them and --yes actually removes them.
+
+mkdir $WORK/kube
+cp $WORK/prod.yaml $WORK/kube/prod.yaml
+cp $WORK/staging.yaml $WORK/kube/staging.yaml
+
+# Seed state for both files.
+exec kcm tag palette add prod staging
+exec kcm tag add prod prod --dir $WORK/kube
+exec kcm tag add staging staging --dir $WORK/kube
+
+# No pruning needed yet.
+exec kcm prune --dir $WORK/kube
+stdout 'no stale state entries found'
+
+# Delete one of the kubeconfigs; its state entry is now stale.
+rm $WORK/kube/staging.yaml
+
+# Dry run lists it and exits without mutation.
+exec kcm prune --dir $WORK/kube
+stdout 'Found 1 stale entry'
+stdout 'staging.yaml'
+stdout 'Run `kcm prune --yes`'
+
+# Re-run confirms nothing was removed by the dry run.
+exec kcm prune --dir $WORK/kube
+stdout 'Found 1 stale entry'
+
+# Actually remove it.
+exec kcm prune --dir $WORK/kube --yes
+stdout 'Removed 1 stale entry'
+
+# Idempotent: second --yes finds nothing.
+exec kcm prune --dir $WORK/kube --yes
+stdout 'no stale state entries found'
+
+# The remaining prod entry is unaffected.
+exec kcm tag list prod --dir $WORK/kube
+stdout 'prod.yaml'
+stdout 'prod'
+
+-- prod.yaml --
+apiVersion: v1
+kind: Config
+current-context: prod-eu
+clusters:
+  - name: prod-eu-cluster
+    cluster:
+      server: https://prod-eu.example.test
+contexts:
+  - name: prod-eu
+    context:
+      cluster: prod-eu-cluster
+      user: prod-admin
+users:
+  - name: prod-admin
+    user:
+      token: test
+-- staging.yaml --
+apiVersion: v1
+kind: Config
+current-context: staging
+clusters:
+  - name: staging-cluster
+    cluster:
+      server: https://staging.example.test
+contexts:
+  - name: staging
+    context:
+      cluster: staging-cluster
+      user: staging-admin
+users:
+  - name: staging-admin
+    user:
+      token: test

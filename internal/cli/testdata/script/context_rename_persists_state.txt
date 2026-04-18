@@ -1,0 +1,57 @@
+# Rename a context through the CLI and assert per-context tags + alerts move
+# with the rename rather than being stranded on the old name.
+
+mkdir $WORK/kube
+cp $WORK/prod.yaml $WORK/kube/prod.yaml
+
+exec kcm tag palette add prod eu
+exec kcm tag add prod prod eu --context prod-eu --dir $WORK/kube
+exec kcm alert enable prod --context prod-eu --dir $WORK/kube
+
+# Sanity: both present under the original name.
+exec kcm tag list prod --context prod-eu --dir $WORK/kube
+stdout 'prod-eu'
+stdout 'prod, eu'
+
+exec kcm alert show prod --context prod-eu --dir $WORK/kube
+stdout 'Enabled:               true'
+
+# Rename prod-eu → prod-europe (writes the kubeconfig file + moves state keys).
+exec kcm context rename prod prod-eu prod-europe --dir $WORK/kube
+stdout 'renamed'
+
+# The kubeconfig now references the new name.
+exec kcm list --dir $WORK/kube
+stdout 'prod-europe'
+! stdout 'prod-eu\b'
+
+# Tags follow the rename.
+exec kcm tag list prod --context prod-europe --dir $WORK/kube
+stdout 'prod-europe'
+stdout 'prod, eu'
+
+# Per-context alert survives the rename.
+exec kcm alert show prod --context prod-europe --dir $WORK/kube
+stdout 'Enabled:               true'
+
+# Old name no longer has state.
+exec kcm tag list prod --context prod-eu --dir $WORK/kube
+stdout 'no tags'
+
+-- prod.yaml --
+apiVersion: v1
+kind: Config
+current-context: prod-eu
+clusters:
+  - name: prod-eu-cluster
+    cluster:
+      server: https://prod-eu.example.test
+contexts:
+  - name: prod-eu
+    context:
+      cluster: prod-eu-cluster
+      user: prod-admin
+users:
+  - name: prod-admin
+    user:
+      token: test

@@ -65,7 +65,7 @@ users:
 // paths at init time, so t.Setenv alone is not enough — Reload() picks up the
 // updated environment. The verification step guards against accidentally
 // writing to the real user state dir.
-func isolateState(t *testing.T, stateHome string) {
+func isolateState(t testing.TB, stateHome string) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", stateHome)
 	xdg.Reload()
@@ -113,7 +113,7 @@ func runCmdInState(t *testing.T, stateHome string, args ...string) (stdout, stde
 	return out.String(), errBuf.String(), err
 }
 
-func seedKubeconfigDir(t *testing.T) string {
+func seedKubeconfigDir(t testing.TB) string {
 	t.Helper()
 	dir := t.TempDir()
 	writeKubeconfig(t, dir, "prod.yaml", prodFixture)
@@ -121,7 +121,7 @@ func seedKubeconfigDir(t *testing.T) string {
 	return dir
 }
 
-func writeKubeconfig(t *testing.T, dir, name, content string) {
+func writeKubeconfig(t testing.TB, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
