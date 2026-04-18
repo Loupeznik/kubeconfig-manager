@@ -35,9 +35,15 @@ Recommended starship config:
   [custom.kcm]
   command = "kubeconfig-manager starship"
   when = "kubeconfig-manager starship | grep -q ."
-  shell = ["sh", "-c"]
   format = "[$output]($style) "
-  style = "bold yellow"`,
+  style = "bold yellow"
+
+Then reference it in your top-level format, e.g.:
+  format = "...${custom.kcm}..."
+
+Do NOT set shell = ["sh", "-c"] — starship 1.24 mishandles the combination
+of an explicit shell override and the custom command, and the module emits
+nothing.`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {

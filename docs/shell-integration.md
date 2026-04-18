@@ -69,10 +69,20 @@ This ensures destructive-action alerts fire for plain `kubectl delete|drain|...`
 [custom.kcm]
 command = "kubeconfig-manager starship"
 when = "kubeconfig-manager starship | grep -q ."
-shell = ["sh", "-c"]
 format = "[$output]($style) "
 style = "bold yellow"
 ```
+
+Reference the module explicitly in your top-level `format` string with `${custom.kcm}`, for example:
+
+```toml
+format = """$os$username$hostname$kubernetes${custom.kcm}$directory$git_branch$git_status\
+$all"""
+```
+
+> **Don't set `shell = ["sh", "-c"]`.** Starship 1.24 mishandles the combination of an explicit `shell` override and custom-module execution — the module computes silently but emits nothing. Let starship use its default shell resolver, which already understands pipes and standard POSIX features.
+>
+> The `when` predicate re-runs `kubeconfig-manager starship` and pipes into `grep -q .` so the module is only displayed when there's actually output — no stray space in the prompt when the kubeconfig has no tags or alerts. If you want the module to always render (empty slot when nothing to show), use `when = true` instead.
 
 `kcm starship` prints a single line describing the active kubeconfig:
 
