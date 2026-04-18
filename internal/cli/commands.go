@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/loupeznik/kubeconfig-manager/internal/audit"
 	"github.com/loupeznik/kubeconfig-manager/internal/guard"
 	"github.com/loupeznik/kubeconfig-manager/internal/kubeconfig"
 	"github.com/loupeznik/kubeconfig-manager/internal/shell"
@@ -53,6 +54,23 @@ func newUseCmd() *cobra.Command {
 	return cmd
 }
 
+// decisionContext / decisionCluster pull the first trigger's active context /
+// cluster out of a kubectl guard Decision for audit logging. Returns "" if no
+// trigger fired, which the audit package treats as an absent field.
+func decisionContext(d guard.Decision) string {
+	if len(d.Triggers) == 0 {
+		return ""
+	}
+	return d.Triggers[0].ContextName
+}
+
+func decisionCluster(d guard.Decision) string {
+	if len(d.Triggers) == 0 {
+		return ""
+	}
+	return d.Triggers[0].ClusterName
+}
+
 func newKubectlCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:                "kubectl [args...]",
@@ -68,13 +86,29 @@ func newKubectlCmd() *cobra.Command {
 				return err
 			}
 			if decision.Alert() {
+				ev := audit.Event{
+					Tool:     "kubectl",
+					Verb:     decision.Verb,
+					Context:  decisionContext(decision),
+					Cluster:  decisionCluster(decision),
+					Decision: "approved",
+				}
 				if err := guard.Confirm(decision); err != nil {
-					if errors.Is(err, guard.ErrDeclined) {
+					switch {
+					case errors.Is(err, guard.ErrDeclined):
+						ev.Decision = "declined"
+						_ = audit.Append(ev)
 						_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "aborted")
 						os.Exit(1)
+					case errors.Is(err, guard.ErrNoTTY):
+						ev.Decision = "no-tty"
+						_ = audit.Append(ev)
+						return err
+					default:
+						return err
 					}
-					return err
 				}
+				_ = audit.Append(ev)
 			}
 			code, err := guard.Exec(args, guard.ExecOptions{})
 			if err != nil {

@@ -510,6 +510,59 @@ func TestInstallShellHookCreatesIdempotentBlock(t *testing.T) {
 	}
 }
 
+// -------- init --------------------------------------------------------------
+
+func TestInitYesSeedsPaletteAndInstallsHook(t *testing.T) {
+	stateHome := t.TempDir()
+	rc := filepath.Join(t.TempDir(), "rc.sh")
+
+	out, _, err := runCmdInState(t, stateHome, "init", "--yes", "--rc", rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"added to palette",
+		"created " + rc,
+		"Next steps",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("init output missing %q:\n%s", want, out)
+		}
+	}
+	// Palette actually written — follow-up command sees it.
+	out, _, err = runCmdInState(t, stateHome, "tag", "palette", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "prod") {
+		t.Errorf("palette missing seeded tags: %s", out)
+	}
+	// rc file contains the hook fence.
+	data, err := os.ReadFile(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "kubeconfig-manager shell hook") {
+		t.Errorf("rc missing hook block: %s", string(data))
+	}
+}
+
+func TestInitSkipFlagsDisableSteps(t *testing.T) {
+	stateHome := t.TempDir()
+	rc := filepath.Join(t.TempDir(), "rc.sh")
+
+	out, _, err := runCmdInState(t, stateHome, "init", "--yes", "--skip-palette", "--skip-shell-hook", "--rc", rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "[skip] palette") || !strings.Contains(out, "[skip] shell hook") {
+		t.Errorf("expected both skips reported: %s", out)
+	}
+	if _, err := os.Stat(rc); err == nil {
+		t.Errorf("rc file should not have been created when --skip-shell-hook is set")
+	}
+}
+
 // -------- dry-run -----------------------------------------------------------
 
 func TestDryRunSkipsFileAndStateWrites(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/loupeznik/kubeconfig-manager/internal/audit"
 	"github.com/loupeznik/kubeconfig-manager/internal/guard"
 	"github.com/loupeznik/kubeconfig-manager/internal/kubeconfig"
 	"github.com/loupeznik/kubeconfig-manager/internal/state"
@@ -31,13 +32,31 @@ func newHelmCmd() *cobra.Command {
 				return err
 			}
 			if decision.Alert() {
+				ev := audit.Event{
+					Tool:      "helm",
+					Verb:      firstHelmVerb(args),
+					Context:   decision.ContextName,
+					Cluster:   decision.ClusterName,
+					Decision:  "approved",
+					Severity:  decision.Triggers[0].Severity.String(),
+					ValuePath: decision.Triggers[0].ValuesPath,
+				}
 				if err := guard.ConfirmHelm(decision); err != nil {
-					if errors.Is(err, guard.ErrDeclined) {
+					switch {
+					case errors.Is(err, guard.ErrDeclined):
+						ev.Decision = "declined"
+						_ = audit.Append(ev)
 						_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "aborted")
 						os.Exit(1)
+					case errors.Is(err, guard.ErrNoTTY):
+						ev.Decision = "no-tty"
+						_ = audit.Append(ev)
+						return err
+					default:
+						return err
 					}
-					return err
 				}
+				_ = audit.Append(ev)
 			}
 			code, err := guard.ExecHelm(args, guard.ExecOptions{})
 			if err != nil {
@@ -50,6 +69,19 @@ func newHelmCmd() *cobra.Command {
 		},
 	}
 	return cmd
+}
+
+// firstHelmVerb returns the first non-flag token from args, which is helm's
+// subcommand ("upgrade", "install", ...). Empty string when args start with
+// a flag or are empty.
+func firstHelmVerb(args []string) string {
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		return a
+	}
+	return ""
 }
 
 // ============================================================================

@@ -1,0 +1,26 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-audit - Show the guard-prompt audit log (kubectl + helm approvals / aborts)
+
+
+.SH SYNOPSIS
+\fBkcm audit [flags]\fP
+
+
+.SH DESCRIPTION
+Prints the last --tail entries from the audit log written by the kubectl and helm guards on every prompt. The log lives under XDG_DATA_HOME/kubeconfig-manager/audit.log and uses a one-line key=value format so grep/awk work naturally.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for audit
+
+.PP
+\fB--tail\fP=20
+	Number of most-recent entries to show (0 = all)
+
+
+.SH SEE ALSO
+\fBkcm(1)\fP
