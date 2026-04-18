@@ -32,8 +32,31 @@ func RenderHook(sh Shell, opts HookOptions) (string, error) {
 		return renderPosixHook(sh, opts), nil
 	case PowerShell:
 		return renderPwshHook(opts), nil
+	case Fish:
+		return renderFishHook(opts), nil
 	}
 	return "", fmt.Errorf("cannot render hook for shell %s", sh)
+}
+
+func renderFishHook(opts HookOptions) string {
+	var b strings.Builder
+	b.WriteString(fenceStart)
+	b.WriteString("\n# Managed by kubeconfig-manager. Do not edit between the fence markers.\n")
+	b.WriteString("# To remove: kubeconfig-manager uninstall-shell-hook\n")
+	fmt.Fprintf(&b, "function kcm\n")
+	fmt.Fprintf(&b, "    switch $argv[1]\n")
+	fmt.Fprintf(&b, "        case use tui\n")
+	fmt.Fprintf(&b, "            eval (command %s $argv --shell=fish)\n", opts.binary())
+	fmt.Fprintf(&b, "        case '*'\n")
+	fmt.Fprintf(&b, "            command %s $argv\n", opts.binary())
+	fmt.Fprintf(&b, "    end\n")
+	fmt.Fprintf(&b, "end\n")
+	if opts.AliasKubectl {
+		fmt.Fprintf(&b, "alias kubectl \"command %s kubectl\"\n", opts.binary())
+	}
+	b.WriteString(fenceEnd)
+	b.WriteString("\n")
+	return b.String()
 }
 
 func renderPosixHook(sh Shell, opts HookOptions) string {
@@ -95,6 +118,8 @@ func RCPath(sh Shell) (string, error) {
 			return filepath.Join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1"), nil
 		}
 		return filepath.Join(home, ".config", "powershell", "Microsoft.PowerShell_profile.ps1"), nil
+	case Fish:
+		return filepath.Join(home, ".config", "fish", "config.fish"), nil
 	}
 	return "", fmt.Errorf("unknown shell")
 }

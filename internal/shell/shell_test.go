@@ -19,7 +19,8 @@ func TestParseFlag(t *testing.T) {
 		{"zsh", Zsh, false},
 		{"pwsh", PowerShell, false},
 		{"powershell", PowerShell, false},
-		{"fish", Unknown, true},
+		{"fish", Fish, false},
+		{"tcsh", Unknown, true},
 	}
 	for _, tt := range tests {
 		got, err := ParseFlag(tt.in)
@@ -80,6 +81,46 @@ func TestExportLineEscapesApostrophes(t *testing.T) {
 	}
 	if !strings.Contains(ps, "o''reilly") {
 		t.Errorf("pwsh escape missing: %q", ps)
+	}
+}
+
+func TestExportLineFish(t *testing.T) {
+	line, err := ExportLine(Fish, "/home/user/.kube/prod.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `set -gx KUBECONFIG '/home/user/.kube/prod.yaml'`
+	if line != want {
+		t.Errorf("got %q, want %q", line, want)
+	}
+}
+
+func TestFishQuoteEscapesBackslashAndQuote(t *testing.T) {
+	line, err := ExportLine(Fish, `/home/o'reilly/path\with\backslash`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(line, `\'`) {
+		t.Errorf("fish apostrophe escape missing: %q", line)
+	}
+	if !strings.Contains(line, `\\`) {
+		t.Errorf("fish backslash escape missing: %q", line)
+	}
+}
+
+func TestRenderHookFish(t *testing.T) {
+	hook, err := RenderHook(Fish, HookOptions{AliasKubectl: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(hook, "function kcm") {
+		t.Errorf("fish hook missing kcm function: %s", hook)
+	}
+	if !strings.Contains(hook, "--shell=fish") {
+		t.Errorf("fish hook missing shell flag: %s", hook)
+	}
+	if !strings.Contains(hook, `alias kubectl "command kubeconfig-manager kubectl"`) {
+		t.Errorf("fish hook missing kubectl alias: %s", hook)
 	}
 }
 

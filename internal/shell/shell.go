@@ -15,6 +15,7 @@ const (
 	Bash
 	Zsh
 	PowerShell
+	Fish
 )
 
 func (s Shell) String() string {
@@ -25,6 +26,8 @@ func (s Shell) String() string {
 		return "zsh"
 	case PowerShell:
 		return "pwsh"
+	case Fish:
+		return "fish"
 	}
 	return "unknown"
 }
@@ -39,8 +42,10 @@ func ParseFlag(name string) (Shell, error) {
 		return Zsh, nil
 	case "pwsh", "powershell":
 		return PowerShell, nil
+	case "fish":
+		return Fish, nil
 	}
-	return Unknown, fmt.Errorf("unsupported shell %q (valid: bash, zsh, pwsh)", name)
+	return Unknown, fmt.Errorf("unsupported shell %q (valid: bash, zsh, pwsh, fish)", name)
 }
 
 func Detect() Shell {
@@ -55,6 +60,8 @@ func Detect() Shell {
 		return Bash
 	case "pwsh", "powershell":
 		return PowerShell
+	case "fish":
+		return Fish
 	}
 	return Bash
 }
@@ -76,6 +83,8 @@ func ExportLine(sh Shell, path string) (string, error) {
 		return "export KUBECONFIG=" + posixQuote(path), nil
 	case PowerShell:
 		return "$env:KUBECONFIG = " + pwshQuote(path), nil
+	case Fish:
+		return "set -gx KUBECONFIG " + fishQuote(path), nil
 	}
 	return "", fmt.Errorf("cannot emit export line for shell %s", sh)
 }
@@ -86,4 +95,12 @@ func posixQuote(s string) string {
 
 func pwshQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// fishQuote wraps in single quotes, escaping the only characters fish treats
+// specially inside single-quoted strings: backslash and single-quote.
+func fishQuote(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `'`, `\'`)
+	return "'" + s + "'"
 }
