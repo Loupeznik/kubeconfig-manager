@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/loupeznik/kubeconfig-manager/internal/kubeconfig"
 	"github.com/loupeznik/kubeconfig-manager/internal/state"
@@ -26,6 +27,9 @@ const (
 	modeTagEdit
 	modeRename
 	modePalette
+	modeCtxRename
+	modeCtxDelete
+	modeCtxSplit
 )
 
 type paletteAction int
@@ -58,6 +62,9 @@ type Model struct {
 	paletteRenameFrom string
 	paletteUsage      map[string][]string
 
+	ctxInput      textinput.Model
+	ctxActionName string // context name pending rename/delete/split
+
 	tagPicker     *tagPicker // non-nil when palette is populated
 	detailFile    *fileItem  // the file whose contexts are shown in ctxTable
 	targetContext string     // when non-empty, tag/alert actions apply per-context
@@ -71,6 +78,14 @@ type Model struct {
 }
 
 func Run(ctx context.Context, dir, version string, store state.Store) (string, error) {
+	// Point lipgloss's default renderer at stderr BEFORE any bubbles component
+	// is constructed. bubbles/textinput and bubbles/cursor create their styles
+	// via lipgloss.NewStyle() which binds to whatever the default renderer is
+	// at call time. Without this, the shell-hook flow (stdout captured by
+	// `eval "$(...)"`) leaves the cursor's Reverse attribute stripped because
+	// stdout is classified as no-color — making the caret invisible.
+	lipgloss.SetDefaultRenderer(renderer)
+
 	m, err := newModel(ctx, dir, version, store)
 	if err != nil {
 		return "", err
@@ -114,6 +129,10 @@ func newModel(ctx context.Context, dir, version string, store state.Store) (Mode
 	pi.CharLimit = 64
 	pi.Placeholder = "new tag name"
 
+	ci := textinput.New()
+	ci.Prompt = "> "
+	ci.CharLimit = 255
+
 	return Model{
 		mode:         modeList,
 		dir:          dir,
@@ -123,6 +142,7 @@ func newModel(ctx context.Context, dir, version string, store state.Store) (Mode
 		ctxList:      newStyledList("context", "contexts", nil, ctxListKeyBindings),
 		paletteList:  newStyledList("tag", "tags", nil, paletteListKeyBindings),
 		paletteInput: pi,
+		ctxInput:     ci,
 		tagInput:     ti,
 		renameInput:  ri,
 	}, nil
@@ -140,6 +160,9 @@ func ctxListKeyBindings() []key.Binding {
 	return []key.Binding{
 		key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "tags")),
 		key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "alerts")),
+		key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "rename")),
+		key.NewBinding(key.WithKeys("D"), key.WithHelp("D", "delete")),
+		key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "split")),
 	}
 }
 
@@ -202,6 +225,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateRename(msg)
 		case modePalette:
 			return m.updatePalette(msg)
+		case modeCtxRename:
+			return m.updateCtxRename(msg)
+		case modeCtxDelete:
+			return m.updateCtxDelete(msg)
+		case modeCtxSplit:
+			return m.updateCtxSplit(msg)
 		}
 
 	case paletteReloadMsg:
@@ -225,7 +254,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.fileList.SetItems(items)
 		if m.detailFile != nil {
-			m.detailFile = refindFile(items, m.detailFile.identity.StableHash)
+			m.detailFile = refindFile(items, m.detailFile.path)
 			if m.detailFile != nil {
 				cfg, cerr := m.store.Load(context.Background())
 				if cerr == nil {
@@ -260,6 +289,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.paletteList, cmd = m.paletteList.Update(msg)
 		}
+	case modeCtxRename, modeCtxSplit:
+		m.ctxInput, cmd = m.ctxInput.Update(msg)
 	}
 	return m, cmd
 }
@@ -277,6 +308,12 @@ func (m Model) View() string {
 		return m.viewTagEdit()
 	case modeRename:
 		return m.viewRename()
+	case modeCtxRename:
+		return m.viewCtxRename()
+	case modeCtxDelete:
+		return m.viewCtxDelete()
+	case modeCtxSplit:
+		return m.viewCtxSplit()
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
@@ -314,6 +351,9 @@ func (m Model) renderFooter() string {
 		keys = strings.Join([]string{
 			renderKey("t", "tags"),
 			renderKey("a", "toggle alerts"),
+			renderKey("R", "rename ctx"),
+			renderKey("D", "delete ctx"),
+			renderKey("S", "split ctx"),
 			renderKey("esc", "back"),
 			renderKey("q", "quit"),
 		}, separatorStyle.Render(" · "))
@@ -464,17 +504,17 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.targetContext = ""
-		m.openTagEditor(fi.entry.Tags)
-		return m, nil
+		blink := m.openTagEditor(fi.entry.Tags)
+		return m, blink
 	case "r":
 		fi, ok := m.currentFileItem()
 		if !ok {
 			return m, nil
 		}
 		m.renameInput.SetValue(fi.file.Name())
-		m.renameInput.Focus()
+		blink := m.renameInput.Focus()
 		m.mode = modeRename
-		return m, nil
+		return m, blink
 	case "a":
 		fi, ok := m.currentFileItem()
 		if !ok {
@@ -724,8 +764,8 @@ func (m Model) updatePalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "n":
 			m.paletteAction = paletteAdding
 			m.paletteInput.SetValue("")
-			m.paletteInput.Focus()
-			return m, nil
+			blink := m.paletteInput.Focus()
+			return m, blink
 		case "r":
 			tag := m.currentPaletteTag()
 			if tag == "" {
@@ -734,8 +774,8 @@ func (m Model) updatePalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.paletteAction = paletteRenaming
 			m.paletteRenameFrom = tag
 			m.paletteInput.SetValue(tag)
-			m.paletteInput.Focus()
-			return m, nil
+			blink := m.paletteInput.Focus()
+			return m, blink
 		case "d":
 			tag := m.currentPaletteTag()
 			if tag == "" {
@@ -940,8 +980,8 @@ func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.targetContext = r.name
-		m.openTagEditor(r.ctxTags)
-		return m, nil
+		blink := m.openTagEditor(r.ctxTags)
+		return m, blink
 	case "a":
 		r, ok := m.currentContextRow()
 		if !ok || m.detailFile == nil {
@@ -958,11 +998,182 @@ func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			status = fmt.Sprintf("alerts disabled for context %s", r.name)
 		}
 		return m, reloadCmd(status)
+	case "R":
+		r, ok := m.currentContextRow()
+		if !ok {
+			return m, nil
+		}
+		m.ctxActionName = r.name
+		m.ctxInput.SetValue(r.name)
+		blink := m.ctxInput.Focus()
+		m.mode = modeCtxRename
+		return m, blink
+	case "D":
+		r, ok := m.currentContextRow()
+		if !ok {
+			return m, nil
+		}
+		m.ctxActionName = r.name
+		m.mode = modeCtxDelete
+		return m, nil
+	case "S":
+		r, ok := m.currentContextRow()
+		if !ok || m.detailFile == nil {
+			return m, nil
+		}
+		m.ctxActionName = r.name
+		m.ctxInput.SetValue(r.name + ".yaml")
+		blink := m.ctxInput.Focus()
+		m.mode = modeCtxSplit
+		return m, blink
 	}
 
 	var cmd tea.Cmd
 	m.ctxList, cmd = m.ctxList.Update(msg)
 	return m, cmd
+}
+
+// ============================================================================
+// Context rename / delete / split modes
+// ============================================================================
+
+func (m Model) updateCtxRename(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "ctrl+c":
+		m.mode = modeDetail
+		m.ctxActionName = ""
+		return m, nil
+	case "enter":
+		newName := strings.TrimSpace(m.ctxInput.Value())
+		oldName := m.ctxActionName
+		m.ctxActionName = ""
+		m.ctxInput.Blur()
+		if newName == "" || newName == oldName || m.detailFile == nil {
+			m.mode = modeDetail
+			return m, nil
+		}
+		if err := renameContextOnDisk(m.store, m.detailFile.path, m.detailFile.identity, oldName, newName); err != nil {
+			m.setErr("rename: " + err.Error())
+			m.mode = modeDetail
+			return m, nil
+		}
+		m.mode = modeDetail
+		return m, reloadCmd(fmt.Sprintf("renamed context %s → %s", oldName, newName))
+	}
+	var cmd tea.Cmd
+	m.ctxInput, cmd = m.ctxInput.Update(msg)
+	return m, cmd
+}
+
+func (m Model) viewCtxRename() string {
+	fileName := "kubeconfig"
+	if m.detailFile != nil {
+		fileName = m.detailFile.file.Name()
+	}
+	body := lipgloss.JoinVertical(
+		lipgloss.Left,
+		detailHeaderStyle.Render("Rename context "+m.ctxActionName+" in "+fileName),
+		"",
+		"New context name:",
+		m.ctxInput.View(),
+		"",
+		dirHintStyle.Render("Tags, alerts, and current-context (if applicable) are moved to the new name."),
+		"",
+		renderKey("↵", "save")+separatorStyle.Render(" · ")+renderKey("esc", "cancel"),
+	)
+	return modalBorderStyle.Render(body)
+}
+
+func (m Model) updateCtxDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y":
+		name := m.ctxActionName
+		m.ctxActionName = ""
+		m.mode = modeDetail
+		if name == "" || m.detailFile == nil {
+			return m, nil
+		}
+		if err := deleteContextOnDisk(m.store, m.detailFile.path, m.detailFile.identity, name); err != nil {
+			m.setErr("delete: " + err.Error())
+			return m, nil
+		}
+		return m, reloadCmd("deleted context " + name)
+	case "n", "esc", "ctrl+c":
+		m.mode = modeDetail
+		m.ctxActionName = ""
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) viewCtxDelete() string {
+	fileName := "kubeconfig"
+	if m.detailFile != nil {
+		fileName = m.detailFile.file.Name()
+	}
+	body := lipgloss.JoinVertical(
+		lipgloss.Left,
+		detailHeaderStyle.Render("Delete context "+alertBadgeStyle.Render(m.ctxActionName)+" from "+fileName+"?"),
+		"",
+		detailValueStyle.Render("This removes the context plus its per-context tags and alerts,"),
+		detailValueStyle.Render("and prunes the referenced cluster and user if no other context uses them."),
+		"",
+		renderKey("y", "confirm delete")+separatorStyle.Render(" · ")+renderKey("n/esc", "cancel"),
+	)
+	return modalBorderStyle.Render(body)
+}
+
+func (m Model) updateCtxSplit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "ctrl+c":
+		m.mode = modeDetail
+		m.ctxActionName = ""
+		return m, nil
+	case "enter":
+		outName := strings.TrimSpace(m.ctxInput.Value())
+		ctxName := m.ctxActionName
+		m.ctxActionName = ""
+		m.ctxInput.Blur()
+		if outName == "" || m.detailFile == nil {
+			m.mode = modeDetail
+			return m, nil
+		}
+		if strings.ContainsRune(outName, os.PathSeparator) {
+			m.setErr("output name must not contain path separators")
+			m.mode = modeDetail
+			return m, nil
+		}
+		outPath := filepath.Join(filepath.Dir(m.detailFile.path), outName)
+		if err := splitContextOnDisk(m.detailFile.path, ctxName, outPath); err != nil {
+			m.setErr("split: " + err.Error())
+			m.mode = modeDetail
+			return m, nil
+		}
+		m.mode = modeDetail
+		return m, reloadCmd(fmt.Sprintf("extracted %s → %s", ctxName, outName))
+	}
+	var cmd tea.Cmd
+	m.ctxInput, cmd = m.ctxInput.Update(msg)
+	return m, cmd
+}
+
+func (m Model) viewCtxSplit() string {
+	fileName := "kubeconfig"
+	if m.detailFile != nil {
+		fileName = m.detailFile.file.Name()
+	}
+	body := lipgloss.JoinVertical(
+		lipgloss.Left,
+		detailHeaderStyle.Render("Extract "+m.ctxActionName+" from "+fileName),
+		"",
+		"New file name (in the same directory):",
+		m.ctxInput.View(),
+		"",
+		dirHintStyle.Render("The context stays in the source file; a copy is written to the new file."),
+		"",
+		renderKey("↵", "extract")+separatorStyle.Render(" · ")+renderKey("esc", "cancel"),
+	)
+	return modalBorderStyle.Render(body)
 }
 
 func (m Model) viewDetail() string {
@@ -1047,21 +1258,24 @@ func (m Model) saveTagsAndReturn(newTags []string) (tea.Model, tea.Cmd) {
 }
 
 // openTagEditor picks between the palette-backed multi-select and the
-// textinput fallback depending on whether the palette has any tags.
-func (m *Model) openTagEditor(currentTags []string) {
+// textinput fallback depending on whether the palette has any tags. Returns
+// the textinput blink command when the fallback is used, so the caller can
+// surface it as a tea.Cmd and the cursor blinks.
+func (m *Model) openTagEditor(currentTags []string) tea.Cmd {
 	cfg, err := m.store.Load(context.Background())
 	if err == nil {
 		cfg.EnsurePaletteFromEntries()
 		if len(cfg.AvailableTags) > 0 {
 			m.tagPicker = newTagPicker(cfg.AvailableTags, currentTags)
 			m.mode = modeTagEdit
-			return
+			return nil
 		}
 	}
 	m.tagPicker = nil
 	m.tagInput.SetValue(strings.Join(currentTags, ", "))
-	m.tagInput.Focus()
+	blink := m.tagInput.Focus()
 	m.mode = modeTagEdit
+	return blink
 }
 
 func (m Model) returnModeFromModal() mode {
@@ -1222,10 +1436,14 @@ func loadFileItems(ctx context.Context, dir string, store state.Store) ([]list.I
 	return items, nil
 }
 
-func refindFile(items []list.Item, stableHash string) *fileItem {
+// refindFile finds the fileItem matching a given path. Path is used instead of
+// the stable hash because topology-changing actions (context rename / delete)
+// shift the hash but leave the path untouched — matching by hash would cause
+// the detail view to go blank after any such action until the user re-enters it.
+func refindFile(items []list.Item, path string) *fileItem {
 	for _, it := range items {
 		fi, ok := it.(fileItem)
-		if ok && fi.identity.StableHash == stableHash {
+		if ok && fi.path == path {
 			copy := fi
 			return &copy
 		}
@@ -1343,6 +1561,91 @@ func setTags(store state.Store, id kubeconfig.Identity, pathHint, contextName st
 		cfg.Entries[id.StableHash] = entry
 		return nil
 	})
+}
+
+// renameContextOnDisk renames a context within the kubeconfig file and moves
+// the per-context state entries to the new name.
+func renameContextOnDisk(store state.Store, path string, oldID kubeconfig.Identity, oldName, newName string) error {
+	cfg, err := clientcmd.LoadFromFile(path)
+	if err != nil {
+		return err
+	}
+	updated, err := kubeconfig.RenameContext(cfg, oldName, newName)
+	if err != nil {
+		return err
+	}
+	if err := clientcmd.WriteToFile(*updated, path); err != nil {
+		return err
+	}
+	newID, err := kubeconfig.IdentifyFile(path)
+	if err != nil {
+		return err
+	}
+	return store.Mutate(context.Background(), func(cfg *state.Config) error {
+		entry := cfg.TakeEntry(oldID.StableHash, oldID.ContentHash)
+		if entry.ContextAlerts != nil {
+			if a, ok := entry.ContextAlerts[oldName]; ok {
+				delete(entry.ContextAlerts, oldName)
+				entry.ContextAlerts[newName] = a
+			}
+		}
+		if entry.ContextTags != nil {
+			if t, ok := entry.ContextTags[oldName]; ok {
+				delete(entry.ContextTags, oldName)
+				entry.ContextTags[newName] = t
+			}
+		}
+		entry.PathHint = filepath.Base(path)
+		entry.Touch()
+		cfg.Entries[newID.StableHash] = entry
+		return nil
+	})
+}
+
+// deleteContextOnDisk removes a context from the kubeconfig file (pruning
+// orphan cluster/user references) and scrubs the per-context state.
+func deleteContextOnDisk(store state.Store, path string, oldID kubeconfig.Identity, name string) error {
+	cfg, err := clientcmd.LoadFromFile(path)
+	if err != nil {
+		return err
+	}
+	updated, err := kubeconfig.Remove(cfg, name)
+	if err != nil {
+		return err
+	}
+	if err := clientcmd.WriteToFile(*updated, path); err != nil {
+		return err
+	}
+	newID, err := kubeconfig.IdentifyFile(path)
+	if err != nil {
+		return err
+	}
+	return store.Mutate(context.Background(), func(cfg *state.Config) error {
+		entry := cfg.TakeEntry(oldID.StableHash, oldID.ContentHash)
+		delete(entry.ContextAlerts, name)
+		delete(entry.ContextTags, name)
+		entry.PathHint = filepath.Base(path)
+		entry.Touch()
+		cfg.Entries[newID.StableHash] = entry
+		return nil
+	})
+}
+
+// splitContextOnDisk extracts a context into its own file without removing it
+// from the source. Refuses to overwrite an existing file.
+func splitContextOnDisk(srcPath, contextName, outPath string) error {
+	if _, err := os.Stat(outPath); err == nil {
+		return fmt.Errorf("%s already exists", filepath.Base(outPath))
+	}
+	cfg, err := clientcmd.LoadFromFile(srcPath)
+	if err != nil {
+		return err
+	}
+	extracted, err := kubeconfig.Extract(cfg, contextName)
+	if err != nil {
+		return err
+	}
+	return clientcmd.WriteToFile(*extracted, outPath)
 }
 
 func rebindPathHint(store state.Store, id kubeconfig.Identity, newHint string) error {
