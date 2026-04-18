@@ -1,0 +1,30 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-helm-guard-set-pattern - Set the path pattern used to derive cluster/env names (e.g. "clusters/{name}/")
+
+
+.SH SYNOPSIS
+\fBkcm helm-guard set-pattern  [flags]\fP
+
+
+.SH DESCRIPTION
+Set the path pattern used to derive cluster/env names (e.g. "clusters/{name}/")
+
+
+.SH OPTIONS
+\fB--dir\fP=""
+	Kubeconfig directory (default: ~/.kube)
+
+.PP
+\fB--file\fP=""
+	Apply only to this kubeconfig (default: global)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for set-pattern
+
+
+.SH SEE ALSO
+\fBkcm-helm-guard(1)\fP

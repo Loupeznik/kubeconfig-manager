@@ -639,6 +639,95 @@ func TestStarshipSilentWhenKubeconfigMissing(t *testing.T) {
 	}
 }
 
+// -------- helm-guard ---------------------------------------------------------
+
+func TestHelmGuardDefaultShow(t *testing.T) {
+	stateHome := t.TempDir()
+
+	out, _, err := runCmdInState(t, stateHome, "helm-guard", "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Global") || !strings.Contains(out, "Enabled:  false") {
+		t.Errorf("default global helm-guard should be disabled, got: %s", out)
+	}
+	if !strings.Contains(out, "clusters/{name}/") {
+		t.Errorf("default pattern missing: %s", out)
+	}
+}
+
+func TestHelmGuardGlobalEnableDisable(t *testing.T) {
+	stateHome := t.TempDir()
+
+	if _, _, err := runCmdInState(t, stateHome, "helm-guard", "enable"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := runCmdInState(t, stateHome, "helm-guard", "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Enabled:  true") {
+		t.Errorf("expected enabled, got: %s", out)
+	}
+
+	if _, _, err := runCmdInState(t, stateHome, "helm-guard", "disable"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err = runCmdInState(t, stateHome, "helm-guard", "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Enabled:  false") {
+		t.Errorf("expected disabled after disable, got: %s", out)
+	}
+}
+
+func TestHelmGuardPerFileOverride(t *testing.T) {
+	dir := seedKubeconfigDir(t)
+	stateHome := t.TempDir()
+
+	// Global on, per-file off.
+	if _, _, err := runCmdInState(t, stateHome, "helm-guard", "enable"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runCmdInState(t, stateHome, "helm-guard", "disable", "--file", "prod", "--dir", dir); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := runCmdInState(t, stateHome, "helm-guard", "show", "--file", "prod", "--dir", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Per-entry override") {
+		t.Errorf("expected per-entry override section: %s", out)
+	}
+	if !strings.Contains(out, "Effective (resolved)") {
+		t.Errorf("expected resolved section: %s", out)
+	}
+}
+
+func TestHelmGuardSetPatternValidates(t *testing.T) {
+	stateHome := t.TempDir()
+
+	_, _, err := runCmdInState(t, stateHome, "helm-guard", "set-pattern", "no-placeholder")
+	if err == nil {
+		t.Fatal("expected error for pattern without {name}")
+	}
+	if !strings.Contains(err.Error(), "{name}") {
+		t.Errorf("error should mention {name}: %v", err)
+	}
+
+	if _, _, err := runCmdInState(t, stateHome, "helm-guard", "set-pattern", "environments/{name}/"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := runCmdInState(t, stateHome, "helm-guard", "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "environments/{name}/") {
+		t.Errorf("pattern not persisted: %s", out)
+	}
+}
+
 // -------- context rename / delete -------------------------------------------
 
 func TestContextRenameMovesStateKeys(t *testing.T) {

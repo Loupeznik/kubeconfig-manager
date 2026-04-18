@@ -1,0 +1,30 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-helm-guard-show - Show the effective helm guard policy (global, or --file-specific)
+
+
+.SH SYNOPSIS
+\fBkcm helm-guard show [flags]\fP
+
+
+.SH DESCRIPTION
+Show the effective helm guard policy (global, or --file-specific)
+
+
+.SH OPTIONS
+\fB--dir\fP=""
+	Kubeconfig directory (default: ~/.kube)
+
+.PP
+\fB--file\fP=""
+	Show policy for this kubeconfig (default: global only)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for show
+
+
+.SH SEE ALSO
+\fBkcm-helm-guard(1)\fP

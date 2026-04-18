@@ -1,0 +1,30 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-helm-guard-enable - Enable the helm guard globally (default) or for a specific kubeconfig with --file
+
+
+.SH SYNOPSIS
+\fBkcm helm-guard enable [flags]\fP
+
+
+.SH DESCRIPTION
+Enable the helm guard globally (default) or for a specific kubeconfig with --file
+
+
+.SH OPTIONS
+\fB--dir\fP=""
+	Kubeconfig directory (default: ~/.kube)
+
+.PP
+\fB--file\fP=""
+	Apply only to this kubeconfig (default: global)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for enable
+
+
+.SH SEE ALSO
+\fBkcm-helm-guard(1)\fP

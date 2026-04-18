@@ -17,6 +17,7 @@ const (
 type HookOptions struct {
 	BinaryName   string
 	AliasKubectl bool
+	AliasHelm    bool
 }
 
 func (h HookOptions) binary() string {
@@ -54,6 +55,9 @@ func renderFishHook(opts HookOptions) string {
 	if opts.AliasKubectl {
 		fmt.Fprintf(&b, "alias kubectl \"command %s kubectl\"\n", opts.binary())
 	}
+	if opts.AliasHelm {
+		fmt.Fprintf(&b, "alias helm \"command %s helm\"\n", opts.binary())
+	}
 	b.WriteString(fenceEnd)
 	b.WriteString("\n")
 	return b.String()
@@ -77,6 +81,9 @@ func renderPosixHook(sh Shell, opts HookOptions) string {
 	if opts.AliasKubectl {
 		fmt.Fprintf(&b, "alias kubectl='command %s kubectl'\n", opts.binary())
 	}
+	if opts.AliasHelm {
+		fmt.Fprintf(&b, "alias helm='command %s helm'\n", opts.binary())
+	}
 	b.WriteString(fenceEnd)
 	b.WriteString("\n")
 	return b.String()
@@ -97,6 +104,9 @@ func renderPwshHook(opts HookOptions) string {
 	fmt.Fprintf(&b, "}\n")
 	if opts.AliasKubectl {
 		fmt.Fprintf(&b, "function kubectl { & %s kubectl @args }\n", opts.binary())
+	}
+	if opts.AliasHelm {
+		fmt.Fprintf(&b, "function helm { & %s helm @args }\n", opts.binary())
 	}
 	b.WriteString(fenceEnd)
 	b.WriteString("\n")

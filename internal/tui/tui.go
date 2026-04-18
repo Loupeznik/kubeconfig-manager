@@ -30,6 +30,9 @@ const (
 	modeCtxRename
 	modeCtxDelete
 	modeCtxSplit
+	modeImport
+	modeMergeSource
+	modeMergeOutput
 )
 
 type paletteAction int
@@ -64,6 +67,9 @@ type Model struct {
 
 	ctxInput      textinput.Model
 	ctxActionName string // context name pending rename/delete/split
+
+	fileInput    textinput.Model // shared for import/merge flows
+	mergeSourceB string          // cached path from modeMergeSource into modeMergeOutput
 
 	tagPicker     *tagPicker // non-nil when palette is populated
 	detailFile    *fileItem  // the file whose contexts are shown in ctxTable
@@ -133,6 +139,10 @@ func newModel(ctx context.Context, dir, version string, store state.Store) (Mode
 	ci.Prompt = "> "
 	ci.CharLimit = 255
 
+	fi := textinput.New()
+	fi.Prompt = "> "
+	fi.CharLimit = 512
+
 	return Model{
 		mode:         modeList,
 		dir:          dir,
@@ -143,6 +153,7 @@ func newModel(ctx context.Context, dir, version string, store state.Store) (Mode
 		paletteList:  newStyledList("tag", "tags", nil, paletteListKeyBindings),
 		paletteInput: pi,
 		ctxInput:     ci,
+		fileInput:    fi,
 		tagInput:     ti,
 		renameInput:  ri,
 	}, nil
@@ -231,6 +242,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateCtxDelete(msg)
 		case modeCtxSplit:
 			return m.updateCtxSplit(msg)
+		case modeImport:
+			return m.updateImport(msg)
+		case modeMergeSource:
+			return m.updateMergeSource(msg)
+		case modeMergeOutput:
+			return m.updateMergeOutput(msg)
 		}
 
 	case paletteReloadMsg:
@@ -291,6 +308,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case modeCtxRename, modeCtxSplit:
 		m.ctxInput, cmd = m.ctxInput.Update(msg)
+	case modeImport, modeMergeSource, modeMergeOutput:
+		m.fileInput, cmd = m.fileInput.Update(msg)
 	}
 	return m, cmd
 }
@@ -314,6 +333,12 @@ func (m Model) View() string {
 		return m.viewCtxDelete()
 	case modeCtxSplit:
 		return m.viewCtxSplit()
+	case modeImport:
+		return m.viewImport()
+	case modeMergeSource:
+		return m.viewMergeSource()
+	case modeMergeOutput:
+		return m.viewMergeOutput()
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
@@ -343,6 +368,8 @@ func (m Model) renderFooter() string {
 			renderKey("t", "tags"),
 			renderKey("a", "alerts"),
 			renderKey("r", "rename"),
+			renderKey("i", "import"),
+			renderKey("m", "merge"),
 			renderKey("p", "palette"),
 			renderKey("/", "filter"),
 			renderKey("q", "quit"),
@@ -460,6 +487,8 @@ func listKeyBindings() []key.Binding {
 		key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "tags")),
 		key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "alerts")),
 		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "rename")),
+		key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "import")),
+		key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "merge")),
 		key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "palette")),
 	}
 }
@@ -533,11 +562,190 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "p":
 		m.openPalette()
 		return m, nil
+	case "i":
+		m.fileInput.SetValue("")
+		m.fileInput.Placeholder = "/path/to/source.yaml"
+		blink := m.fileInput.Focus()
+		m.mode = modeImport
+		return m, blink
+	case "m":
+		m.fileInput.SetValue("")
+		m.fileInput.Placeholder = "/path/to/second-source.yaml"
+		blink := m.fileInput.Focus()
+		m.mode = modeMergeSource
+		return m, blink
 	}
 
 	var cmd tea.Cmd
 	m.fileList, cmd = m.fileList.Update(msg)
 	return m, cmd
+}
+
+// ============================================================================
+// Import / merge flows
+// ============================================================================
+
+func (m Model) updateImport(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "ctrl+c":
+		m.fileInput.Blur()
+		m.mode = modeList
+		return m, nil
+	case "enter":
+		srcPath := strings.TrimSpace(m.fileInput.Value())
+		m.fileInput.Blur()
+		m.mode = modeList
+		if srcPath == "" {
+			return m, nil
+		}
+		dest := destForImport(&m)
+		if err := importOnDisk(srcPath, dest); err != nil {
+			m.setErr("import: " + err.Error())
+			return m, nil
+		}
+		return m, reloadCmd(fmt.Sprintf("imported %s → %s", filepath.Base(srcPath), filepath.Base(dest)))
+	}
+	var cmd tea.Cmd
+	m.fileInput, cmd = m.fileInput.Update(msg)
+	return m, cmd
+}
+
+// destForImport picks a target file for `i` (import): the currently highlighted
+// file if there is one, else the default kubeconfig (~/.kube/config).
+func destForImport(m *Model) string {
+	if fi, ok := m.currentFileItem(); ok {
+		return fi.path
+	}
+	def, err := kubeconfig.DefaultPath()
+	if err != nil {
+		return ""
+	}
+	return def
+}
+
+func (m Model) viewImport() string {
+	destLabel := "~/.kube/config"
+	if fi, ok := m.currentFileItem(); ok {
+		destLabel = fi.file.Name()
+	}
+	body := lipgloss.JoinVertical(
+		lipgloss.Left,
+		detailHeaderStyle.Render("Import into "+destLabel),
+		"",
+		"Path to the source kubeconfig to merge in:",
+		m.fileInput.View(),
+		"",
+		dirHintStyle.Render("Uses skip-on-conflict so existing entries are preserved."),
+		"",
+		renderKey("↵", "import")+separatorStyle.Render(" · ")+renderKey("esc", "cancel"),
+	)
+	return modalBorderStyle.Render(body)
+}
+
+func (m Model) updateMergeSource(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "ctrl+c":
+		m.fileInput.Blur()
+		m.mode = modeList
+		return m, nil
+	case "enter":
+		srcB := strings.TrimSpace(m.fileInput.Value())
+		if srcB == "" {
+			m.fileInput.Blur()
+			m.mode = modeList
+			return m, nil
+		}
+		m.mergeSourceB = srcB
+		// transition to output-path input
+		fi, ok := m.currentFileItem()
+		suggested := "merged.yaml"
+		if ok {
+			suggested = "merged-" + fi.file.Name()
+		}
+		m.fileInput.SetValue(suggested)
+		m.fileInput.Placeholder = "output filename"
+		blink := m.fileInput.Focus()
+		m.mode = modeMergeOutput
+		return m, blink
+	}
+	var cmd tea.Cmd
+	m.fileInput, cmd = m.fileInput.Update(msg)
+	return m, cmd
+}
+
+func (m Model) viewMergeSource() string {
+	sourceA := "~/.kube/config"
+	if fi, ok := m.currentFileItem(); ok {
+		sourceA = fi.file.Name()
+	}
+	body := lipgloss.JoinVertical(
+		lipgloss.Left,
+		detailHeaderStyle.Render("Merge — source A: "+sourceA),
+		"",
+		"Path to the second source kubeconfig:",
+		m.fileInput.View(),
+		"",
+		dirHintStyle.Render("Both sources remain untouched; a new file is produced."),
+		"",
+		renderKey("↵", "next")+separatorStyle.Render(" · ")+renderKey("esc", "cancel"),
+	)
+	return modalBorderStyle.Render(body)
+}
+
+func (m Model) updateMergeOutput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "ctrl+c":
+		m.fileInput.Blur()
+		m.mergeSourceB = ""
+		m.mode = modeList
+		return m, nil
+	case "enter":
+		outName := strings.TrimSpace(m.fileInput.Value())
+		srcB := m.mergeSourceB
+		m.mergeSourceB = ""
+		m.fileInput.Blur()
+		m.mode = modeList
+		if outName == "" || srcB == "" {
+			return m, nil
+		}
+		fi, ok := m.currentFileItem()
+		if !ok {
+			m.setErr("merge: no highlighted source")
+			return m, nil
+		}
+		if strings.ContainsRune(outName, os.PathSeparator) {
+			m.setErr("merge: output name must not contain path separators")
+			return m, nil
+		}
+		outPath := filepath.Join(filepath.Dir(fi.path), outName)
+		if err := mergeOnDisk(fi.path, srcB, outPath); err != nil {
+			m.setErr("merge: " + err.Error())
+			return m, nil
+		}
+		return m, reloadCmd(fmt.Sprintf("merged %s + %s → %s", fi.file.Name(), filepath.Base(srcB), outName))
+	}
+	var cmd tea.Cmd
+	m.fileInput, cmd = m.fileInput.Update(msg)
+	return m, cmd
+}
+
+func (m Model) viewMergeOutput() string {
+	sourceA := "(no selection)"
+	if fi, ok := m.currentFileItem(); ok {
+		sourceA = fi.file.Name()
+	}
+	body := lipgloss.JoinVertical(
+		lipgloss.Left,
+		detailHeaderStyle.Render("Merge — output for "+sourceA+" + "+filepath.Base(m.mergeSourceB)),
+		"",
+		"Output filename (in the same directory as the highlighted source):",
+		m.fileInput.View(),
+		"",
+		dirHintStyle.Render("Uses skip-on-conflict; existing entries in source A win."),
+		"",
+		renderKey("↵", "merge")+separatorStyle.Render(" · ")+renderKey("esc", "cancel"),
+	)
+	return modalBorderStyle.Render(body)
 }
 
 // ============================================================================
@@ -1646,6 +1854,48 @@ func splitContextOnDisk(srcPath, contextName, outPath string) error {
 		return err
 	}
 	return clientcmd.WriteToFile(*extracted, outPath)
+}
+
+// importOnDisk merges the kubeconfig at srcPath into destPath (conflict policy
+// skip — the destination wins). destPath is created if missing.
+func importOnDisk(srcPath, destPath string) error {
+	srcCfg, err := clientcmd.LoadFromFile(srcPath)
+	if err != nil {
+		return fmt.Errorf("load source: %w", err)
+	}
+	destCfg, err := clientcmd.LoadFromFile(destPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("load dest: %w", err)
+		}
+		destCfg = nil // Merge creates an empty base when dest is nil
+	}
+	merged, _, err := kubeconfig.Merge(destCfg, srcCfg, kubeconfig.ConflictSkip)
+	if err != nil {
+		return err
+	}
+	return clientcmd.WriteToFile(*merged, destPath)
+}
+
+// mergeOnDisk combines two kubeconfigs into a new file (skip-on-conflict;
+// source A wins). Refuses to overwrite an existing output.
+func mergeOnDisk(aPath, bPath, outPath string) error {
+	if _, err := os.Stat(outPath); err == nil {
+		return fmt.Errorf("%s already exists", filepath.Base(outPath))
+	}
+	cfgA, err := clientcmd.LoadFromFile(aPath)
+	if err != nil {
+		return fmt.Errorf("load %s: %w", aPath, err)
+	}
+	cfgB, err := clientcmd.LoadFromFile(bPath)
+	if err != nil {
+		return fmt.Errorf("load %s: %w", bPath, err)
+	}
+	merged, _, err := kubeconfig.Merge(cfgA, cfgB, kubeconfig.ConflictSkip)
+	if err != nil {
+		return err
+	}
+	return clientcmd.WriteToFile(*merged, outPath)
 }
 
 func rebindPathHint(store state.Store, id kubeconfig.Identity, newHint string) error {

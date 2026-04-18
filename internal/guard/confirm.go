@@ -77,3 +77,32 @@ func confirmClusterName(expected []string) error {
 func hasTTY() bool {
 	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stderr.Fd()))
 }
+
+// ConfirmHelm prompts the user to approve a helm invocation after a path/context
+// mismatch has been detected. Mirrors Confirm for kubectl.
+func ConfirmHelm(d HelmDecision) error {
+	if !d.Alert() {
+		return nil
+	}
+	if !hasTTY() {
+		return fmt.Errorf("%w (helm-guard triggered; run in an interactive shell or disable the guard)", ErrNoTTY)
+	}
+
+	_, _ = fmt.Fprintln(os.Stderr)
+	_, _ = fmt.Fprintln(os.Stderr, d.Describe())
+
+	var approved bool
+	err := huh.NewConfirm().
+		Title("Proceed with this helm invocation?").
+		Affirmative("Yes, proceed").
+		Negative("No, abort").
+		Value(&approved).
+		Run()
+	if err != nil {
+		return err
+	}
+	if !approved {
+		return ErrDeclined
+	}
+	return nil
+}

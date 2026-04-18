@@ -102,6 +102,16 @@ kubeconfig-manager starship --context=prod-eu
 
 Runs on every prompt, so it's optimized to skip palette bootstrapping and to exit silently on any error — your prompt never stalls or prints noise.
 
+## Opting into the helm alias
+
+Similar to `--alias-kubectl` (which is on by default), `--alias-helm` routes plain `helm` invocations through `kcm helm` so the values-path guard catches every call — not just `kcm helm ...`:
+
+```sh
+kubeconfig-manager install-shell-hook --alias-helm
+```
+
+`--alias-helm` is off by default because the guard itself is off by default (enable it with `kcm helm-guard enable`). See [helm-guard.md](helm-guard.md) for the full configuration reference.
+
 ## Opting out of the kubectl alias
 
 If you'd rather only get alerts through explicit `kcm kubectl ...` invocations, pass `--no-alias-kubectl`:

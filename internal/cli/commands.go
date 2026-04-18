@@ -135,6 +135,7 @@ func newInstallShellHookCmd() *cobra.Command {
 	var shellFlag string
 	var rcFlag string
 	var noAliasKubectl bool
+	var aliasHelm bool
 
 	cmd := &cobra.Command{
 		Use:   "install-shell-hook",
@@ -157,7 +158,10 @@ func newInstallShellHookCmd() *cobra.Command {
 				}
 			}
 			aliasKubectl := !noAliasKubectl
-			hook, err := shell.RenderHook(sh, shell.HookOptions{AliasKubectl: aliasKubectl})
+			hook, err := shell.RenderHook(sh, shell.HookOptions{
+				AliasKubectl: aliasKubectl,
+				AliasHelm:    aliasHelm,
+			})
 			if err != nil {
 				return err
 			}
@@ -178,6 +182,9 @@ func newInstallShellHookCmd() *cobra.Command {
 			} else {
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "kubectl alias skipped — alerts will only fire for `kcm kubectl ...`")
 			}
+			if aliasHelm {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "helm alias installed — helm values-path guard applies to plain `helm` invocations too")
+			}
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "restart your shell or source the rc file to activate")
 			return nil
 		},
@@ -185,6 +192,7 @@ func newInstallShellHookCmd() *cobra.Command {
 	cmd.Flags().StringVar(&shellFlag, "shell", "", "bash, zsh, or pwsh (auto-detected if unset)")
 	cmd.Flags().StringVar(&rcFlag, "rc", "", "rc file path (default depends on shell)")
 	cmd.Flags().BoolVar(&noAliasKubectl, "no-alias-kubectl", false, "Skip the kubectl alias (alerts won't fire for plain kubectl invocations)")
+	cmd.Flags().BoolVar(&aliasHelm, "alias-helm", false, "Also alias helm to route through the helm-guard (opt-in)")
 	return cmd
 }
 

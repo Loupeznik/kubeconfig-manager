@@ -35,6 +35,8 @@ func NewRootCmd() *cobra.Command {
 		newContextCmd(),
 		newPruneCmd(),
 		newKubectlCmd(),
+		newHelmCmd(),
+		newHelmGuardCmd(),
 		newTUICmd(),
 		newInstallShellHookCmd(),
 		newUninstallShellHookCmd(),

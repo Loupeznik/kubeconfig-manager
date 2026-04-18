@@ -1,0 +1,22 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-helm - Run helm through the values-path / context mismatch guard
+
+
+.SH SYNOPSIS
+\fBkcm helm [args...] [flags]\fP
+
+
+.SH DESCRIPTION
+Invokes helm with the given arguments. When the active kubeconfig has the helm-guard enabled, kcm parses -f/--values flags, derives a cluster/env name from each values-file path, and compares it to the active kubectl context. On a significant mismatch (e.g. path says k8s-test-01, context is k8s-prod-01), kcm prompts for confirmation before exec'ing helm.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for helm
+
+
+.SH SEE ALSO
+\fBkcm(1)\fP

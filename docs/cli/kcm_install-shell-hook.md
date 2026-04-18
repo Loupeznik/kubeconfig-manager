@@ -18,6 +18,7 @@ kcm install-shell-hook [flags]
 ### Options
 
 ```
+      --alias-helm         Also alias helm to route through the helm-guard (opt-in)
   -h, --help               help for install-shell-hook
       --no-alias-kubectl   Skip the kubectl alias (alerts won't fire for plain kubectl invocations)
       --rc string          rc file path (default depends on shell)

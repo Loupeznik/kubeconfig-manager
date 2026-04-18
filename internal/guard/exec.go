@@ -26,12 +26,19 @@ type ExecOptions struct {
 // Callers that need the child's code to terminate the whole process should
 // wrap this with os.Exit(code).
 func Exec(args []string, opts ExecOptions) (int, error) {
-	kubectl, err := exec.LookPath("kubectl")
+	return execByName("kubectl", args, opts)
+}
+
+// execByName looks up binaryName on PATH and runs it with args, forwarding
+// stdio from opts (or the parent process) and returning the child exit code.
+// Shared between Exec (kubectl) and ExecHelm.
+func execByName(binaryName string, args []string, opts ExecOptions) (int, error) {
+	bin, err := exec.LookPath(binaryName)
 	if err != nil {
-		return 0, fmt.Errorf("kubectl not found on PATH: %w", err)
+		return 0, fmt.Errorf("%s not found on PATH: %w", binaryName, err)
 	}
 
-	cmd := exec.Command(kubectl, args...)
+	cmd := exec.Command(bin, args...)
 	cmd.Stdin = opts.Stdin
 	if cmd.Stdin == nil {
 		cmd.Stdin = os.Stdin
@@ -57,5 +64,5 @@ func Exec(args []string, opts ExecOptions) (int, error) {
 	if errors.As(err, &exitErr) {
 		return exitErr.ExitCode(), nil
 	}
-	return 0, fmt.Errorf("kubectl exec: %w", err)
+	return 0, fmt.Errorf("%s exec: %w", binaryName, err)
 }

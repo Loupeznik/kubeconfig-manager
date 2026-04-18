@@ -9,6 +9,7 @@
 - [Shell integration](shell-integration.md) — `use`, `tui`, `install-shell-hook`, optional `kubectl` alias
 - [Tags and alerts](tags-and-alerts.md) — how metadata attaches to kubeconfigs
 - [Destructive-action guard](guard.md) — how `kcm kubectl` intercepts dangerous verbs
+- [Helm values-path guard](helm-guard.md) — catch values-file / context mismatches before `helm upgrade` ruins your day
 - [Import, split, merge](import-split-merge.md) — reorganizing kubeconfig files
 - [State file](state-file.md) — schema, storage location, sync-readiness
 - [Architecture](architecture.md) — package layout and design decisions
