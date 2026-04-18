@@ -61,6 +61,37 @@ This ensures destructive-action alerts fire for plain `kubectl delete|drain|...`
 - Alert confirmations may interrupt scripts — disable alerts on the relevant kubeconfig (`kcm alert disable <file>`) or run non-interactive workloads through the plain binary path (`command kubectl ...`, which bypasses the alias).
 - Removing the alias is one command: `kubeconfig-manager uninstall-shell-hook`, or edit the rc file and delete the fenced block.
 
+## Starship prompt integration
+
+[Starship](https://starship.rs/) can surface `kcm`'s tag and alert state in your prompt via its `custom` module. Drop this into `~/.config/starship.toml`:
+
+```toml
+[custom.kcm]
+command = "kubeconfig-manager starship"
+when = "kubeconfig-manager starship | grep -q ."
+shell = ["sh", "-c"]
+format = "[$output]($style) "
+style = "bold yellow"
+```
+
+`kcm starship` prints a single line describing the active kubeconfig:
+
+| Output | Meaning |
+|---|---|
+| `⚠ prod,eu,critical` | Alerts enabled + tags attached |
+| `prod,eu` | Tags only |
+| `⚠` | Alerts only |
+| (empty) | Neither — starship's `when` predicate hides the module |
+
+Defaults to summarizing `$KUBECONFIG`'s first path (or `~/.kube/config`) at its current-context. Override either:
+
+```sh
+kubeconfig-manager starship --file=/path/to/other.yaml
+kubeconfig-manager starship --context=prod-eu
+```
+
+Runs on every prompt, so it's optimized to skip palette bootstrapping and to exit silently on any error — your prompt never stalls or prints noise.
+
 ## Opting out of the kubectl alias
 
 If you'd rather only get alerts through explicit `kcm kubectl ...` invocations, pass `--no-alias-kubectl`:

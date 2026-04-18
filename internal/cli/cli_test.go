@@ -510,6 +510,135 @@ func TestInstallShellHookCreatesIdempotentBlock(t *testing.T) {
 	}
 }
 
+// -------- starship ----------------------------------------------------------
+
+func TestStarshipSilentWhenNoEntry(t *testing.T) {
+	dir := seedKubeconfigDir(t)
+	t.Setenv("KUBECONFIG", filepath.Join(dir, "prod.yaml"))
+
+	out, _, err := runCmd(t, "starship")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("expected empty output when no state entry, got: %q", out)
+	}
+}
+
+func TestStarshipShowsTagsOnly(t *testing.T) {
+	dir := seedKubeconfigDir(t)
+	stateHome := t.TempDir()
+	prod := filepath.Join(dir, "prod.yaml")
+	t.Setenv("KUBECONFIG", prod)
+
+	if _, _, err := runCmdInState(t, stateHome, "tag", "palette", "add", "prod", "eu"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runCmdInState(t, stateHome, "tag", "add", "prod", "prod", "eu", "--dir", dir); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _, err := runCmdInState(t, stateHome, "starship")
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.TrimSpace(out)
+	if strings.Contains(line, "⚠") {
+		t.Errorf("no alerts enabled; output should not include warning: %q", line)
+	}
+	if !strings.Contains(line, "prod") || !strings.Contains(line, "eu") {
+		t.Errorf("output should include tags: %q", line)
+	}
+}
+
+func TestStarshipShowsAlertsOnly(t *testing.T) {
+	dir := seedKubeconfigDir(t)
+	stateHome := t.TempDir()
+	t.Setenv("KUBECONFIG", filepath.Join(dir, "prod.yaml"))
+
+	if _, _, err := runCmdInState(t, stateHome, "alert", "enable", "prod", "--dir", dir); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _, err := runCmdInState(t, stateHome, "starship")
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.TrimSpace(out)
+	if line != "⚠" {
+		t.Errorf("expected just the warning symbol, got: %q", line)
+	}
+}
+
+func TestStarshipShowsBoth(t *testing.T) {
+	dir := seedKubeconfigDir(t)
+	stateHome := t.TempDir()
+	t.Setenv("KUBECONFIG", filepath.Join(dir, "prod.yaml"))
+
+	if _, _, err := runCmdInState(t, stateHome, "tag", "palette", "add", "prod"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runCmdInState(t, stateHome, "tag", "add", "prod", "prod", "--dir", dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runCmdInState(t, stateHome, "alert", "enable", "prod", "--dir", dir); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _, err := runCmdInState(t, stateHome, "starship")
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.TrimSpace(out)
+	if !strings.HasPrefix(line, "⚠") {
+		t.Errorf("expected output to start with warning: %q", line)
+	}
+	if !strings.Contains(line, "prod") {
+		t.Errorf("expected tag prod in output: %q", line)
+	}
+}
+
+func TestStarshipHonorsContextFlag(t *testing.T) {
+	dir := seedKubeconfigDir(t)
+	stateHome := t.TempDir()
+	t.Setenv("KUBECONFIG", filepath.Join(dir, "prod.yaml"))
+
+	// Enable alerts only for prod-us context.
+	if _, _, err := runCmdInState(t, stateHome, "alert", "enable", "prod", "--context", "prod-us", "--dir", dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Default current-context is prod-eu → no alert.
+	out, _, err := runCmdInState(t, stateHome, "starship")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.TrimSpace(out), "⚠") {
+		t.Errorf("prod-eu should not have alerts enabled: %q", out)
+	}
+
+	// Explicit --context=prod-us → alert fires.
+	out, _, err = runCmdInState(t, stateHome, "starship", "--context", "prod-us")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.TrimSpace(out), "⚠") {
+		t.Errorf("prod-us should have alerts enabled: %q", out)
+	}
+}
+
+func TestStarshipSilentWhenKubeconfigMissing(t *testing.T) {
+	t.Setenv("KUBECONFIG", "/nonexistent/kubeconfig.yaml")
+
+	out, _, err := runCmd(t, "starship")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("should be silent for missing file, got: %q", out)
+	}
+}
+
 // -------- context rename / delete -------------------------------------------
 
 func TestContextRenameMovesStateKeys(t *testing.T) {

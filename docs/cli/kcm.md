@@ -26,6 +26,7 @@ kubeconfig-manager (kcm) is a TUI + CLI for managing local kubeconfig files and 
 * [kcm rename](kcm_rename.md)	 - Rename a kubeconfig file on disk (metadata re-binds automatically)
 * [kcm show](kcm_show.md)	 - Show contexts, clusters, and users of a kubeconfig file
 * [kcm split](kcm_split.md)	 - Extract a context (with its cluster and user) into its own file
+* [kcm starship](kcm_starship.md)	 - Print a one-line tag/alert summary for starship's custom module
 * [kcm tag](kcm_tag.md)	 - Manage tags on kubeconfig files or individual contexts
 * [kcm tui](kcm_tui.md)	 - Launch the interactive TUI
 * [kcm uninstall-shell-hook](kcm_uninstall-shell-hook.md)	 - Remove the shell integration block from the rc file

@@ -1,0 +1,52 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-starship - Print a one-line tag/alert summary for starship's custom module
+
+
+.SH SYNOPSIS
+\fBkcm starship [flags]\fP
+
+
+.SH DESCRIPTION
+Prints a minimal summary of the active kubeconfig's tags and alert state,
+suitable for consumption by starship's custom module. Exits silently with no
+output when there is nothing worth showing — starship's 'when' predicate hides
+the module in that case.
+
+.PP
+Output format:
+  "⚠ prod,eu,critical"    — alerts enabled + tags
+  "prod,eu"               — tags only
+  "⚠"                     — alerts only
+  ""                      — neither (module suppressed by starship)
+
+.PP
+Recommended starship config:
+
+.PP
+[custom.kcm]
+  command = "kubeconfig-manager starship"
+  when = "kubeconfig-manager starship | grep -q ."
+  shell = ["sh", "-c"]
+  format = "$output
+\[la]$style\[ra] "
+  style = "bold yellow"
+
+
+.SH OPTIONS
+\fB--context\fP=""
+	Context to summarize (default: the kubeconfig's current-context)
+
+.PP
+\fB--file\fP=""
+	Kubeconfig path (default: first of $KUBECONFIG, else ~/.kube/config)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for starship
+
+
+.SH SEE ALSO
+\fBkcm(1)\fP
