@@ -161,6 +161,58 @@ func TestRemoveTags(t *testing.T) {
 	}
 }
 
+func TestEnsurePaletteMergesMissingEntryTags(t *testing.T) {
+	cfg := NewConfig()
+	cfg.AvailableTags = []string{"test", "xd"}
+	cfg.Entries["sha256:abc"] = Entry{
+		Tags: []string{"orig", "test"},
+		ContextTags: map[string][]string{
+			"prod-eu": {"ctx-only"},
+		},
+	}
+
+	added := cfg.EnsurePaletteFromEntries()
+
+	wantAdded := map[string]bool{"orig": true, "ctx-only": true}
+	if len(added) != 2 {
+		t.Errorf("added: got %v, want orig + ctx-only", added)
+	}
+	for _, a := range added {
+		if !wantAdded[a] {
+			t.Errorf("unexpected tag added: %q", a)
+		}
+	}
+
+	// Existing palette order preserved; new tags appended.
+	if got := cfg.AvailableTags[:2]; got[0] != "test" || got[1] != "xd" {
+		t.Errorf("palette head reordered: %v", got)
+	}
+	seen := map[string]bool{}
+	for _, t := range cfg.AvailableTags {
+		seen[t] = true
+	}
+	for _, want := range []string{"test", "xd", "orig", "ctx-only"} {
+		if !seen[want] {
+			t.Errorf("palette missing %q after merge: %v", want, cfg.AvailableTags)
+		}
+	}
+}
+
+func TestEnsurePaletteIdempotent(t *testing.T) {
+	cfg := NewConfig()
+	cfg.AvailableTags = []string{"prod", "staging"}
+	cfg.Entries["sha256:abc"] = Entry{Tags: []string{"prod"}}
+
+	first := cfg.EnsurePaletteFromEntries()
+	second := cfg.EnsurePaletteFromEntries()
+	if len(first) != 0 || len(second) != 0 {
+		t.Errorf("unexpected additions: first=%v second=%v", first, second)
+	}
+	if len(cfg.AvailableTags) != 2 {
+		t.Errorf("palette grew: %v", cfg.AvailableTags)
+	}
+}
+
 func TestMigrateRejectsFutureVersion(t *testing.T) {
 	cfg := &Config{Version: 99}
 	if err := migrate(cfg); err == nil {

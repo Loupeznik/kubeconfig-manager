@@ -288,31 +288,37 @@ func (c *Config) IsTagInPalette(tag string) bool {
 	return false
 }
 
-// EnsurePaletteFromEntries bootstraps the palette from tags already attached
-// to entries. Runs once on first palette access so existing state files
-// upgrade without the user having to re-declare every tag.
-func (c *Config) EnsurePaletteFromEntries() (populated bool) {
-	if len(c.AvailableTags) > 0 {
-		return false
+// EnsurePaletteFromEntries makes sure every tag attached to any entry (file
+// level or per-context) is present in the palette. Adds any missing tag,
+// preserves existing palette order, dedupes. Safe to call repeatedly — it is
+// both a first-run bootstrap and a repair step for state modified by older
+// versions, `--allow-new` flows, or direct edits that bypass the palette.
+//
+// Returns the list of tags newly added to the palette.
+func (c *Config) EnsurePaletteFromEntries() (added []string) {
+	inPalette := make(map[string]bool, len(c.AvailableTags))
+	for _, t := range c.AvailableTags {
+		inPalette[t] = true
 	}
-	seen := map[string]bool{}
+	addNew := func(t string) {
+		if t == "" || inPalette[t] {
+			return
+		}
+		inPalette[t] = true
+		c.AvailableTags = append(c.AvailableTags, t)
+		added = append(added, t)
+	}
 	for _, entry := range c.Entries {
 		for _, t := range entry.Tags {
-			if !seen[t] {
-				seen[t] = true
-				c.AvailableTags = append(c.AvailableTags, t)
-			}
+			addNew(t)
 		}
 		for _, ctxTags := range entry.ContextTags {
 			for _, t := range ctxTags {
-				if !seen[t] {
-					seen[t] = true
-					c.AvailableTags = append(c.AvailableTags, t)
-				}
+				addNew(t)
 			}
 		}
 	}
-	return len(c.AvailableTags) > 0
+	return added
 }
 
 func DefaultBlockedVerbs() []string {
