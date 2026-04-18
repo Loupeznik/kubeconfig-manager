@@ -140,6 +140,32 @@ func Extract(src *clientcmdapi.Config, contextName string) (*clientcmdapi.Config
 	return out, nil
 }
 
+// RenameContext renames a context within a config, updating current-context if
+// it was pointing at the old name. Returns an error if the new name already
+// exists or the old name is not found.
+func RenameContext(src *clientcmdapi.Config, oldName, newName string) (*clientcmdapi.Config, error) {
+	if src == nil {
+		return nil, fmt.Errorf("nil source config")
+	}
+	if oldName == newName {
+		return src, nil
+	}
+	ctx, ok := src.Contexts[oldName]
+	if !ok {
+		return nil, fmt.Errorf("context %q not found", oldName)
+	}
+	if _, exists := src.Contexts[newName]; exists {
+		return nil, fmt.Errorf("context %q already exists", newName)
+	}
+	out := cloneConfig(src)
+	delete(out.Contexts, oldName)
+	out.Contexts[newName] = ctx.DeepCopy()
+	if out.CurrentContext == oldName {
+		out.CurrentContext = newName
+	}
+	return out, nil
+}
+
 func Remove(src *clientcmdapi.Config, contextName string) (*clientcmdapi.Config, error) {
 	if src == nil {
 		return nil, fmt.Errorf("nil source config")

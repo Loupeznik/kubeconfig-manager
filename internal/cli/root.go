@@ -32,6 +32,7 @@ func NewRootCmd() *cobra.Command {
 		newImportCmd(),
 		newSplitCmd(),
 		newMergeCmd(),
+		newContextCmd(),
 		newPruneCmd(),
 		newKubectlCmd(),
 		newTUICmd(),

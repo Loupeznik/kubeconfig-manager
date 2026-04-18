@@ -239,7 +239,7 @@ func TestUseEmitsPowerShellExport(t *testing.T) {
 
 func TestUseUnknownShellErrors(t *testing.T) {
 	dir := seedKubeconfigDir(t)
-	_, _, err := runCmd(t, "use", "prod", "--dir", dir, "--shell=fish")
+	_, _, err := runCmd(t, "use", "prod", "--dir", dir, "--shell=tcsh")
 	if err == nil {
 		t.Fatal("expected error for unsupported shell")
 	}
@@ -507,6 +507,123 @@ func TestInstallShellHookCreatesIdempotentBlock(t *testing.T) {
 	}
 	if strings.Contains(string(second), "alias kubectl=") {
 		t.Errorf("alias should be removed with --no-alias-kubectl: %s", second)
+	}
+}
+
+// -------- context rename / delete -------------------------------------------
+
+func TestContextRenameMovesStateKeys(t *testing.T) {
+	dir := seedKubeconfigDir(t)
+	stateHome := t.TempDir()
+
+	// Seed palette + per-context tag + per-context alert on prod-eu.
+	if _, _, err := runCmdInState(t, stateHome, "tag", "palette", "add", "prod", "eu"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runCmdInState(t, stateHome, "tag", "add", "prod", "prod", "--context", "prod-eu", "--dir", dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runCmdInState(t, stateHome, "alert", "enable", "prod", "--context", "prod-eu", "--dir", dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Rename prod-eu -> prod-europe.
+	if _, _, err := runCmdInState(t, stateHome, "context", "rename", "prod", "prod-eu", "prod-europe", "--dir", dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Check the kubeconfig file renamed the context.
+	f, err := kubeconfig.Load(filepath.Join(dir, "prod.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.Config.Contexts["prod-europe"]; !ok {
+		t.Errorf("kubeconfig missing renamed context: %v", f.Config.Contexts)
+	}
+	if _, ok := f.Config.Contexts["prod-eu"]; ok {
+		t.Errorf("kubeconfig still has old context name")
+	}
+	if f.Config.CurrentContext != "prod-europe" {
+		t.Errorf("current-context not updated: %q", f.Config.CurrentContext)
+	}
+
+	// Check state moved per-context alert + tags to the new key.
+	out, _, err := runCmdInState(t, stateHome, "alert", "show", "prod", "--context", "prod-europe", "--dir", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Enabled:               true") {
+		t.Errorf("alerts should have moved to new context name: %s", out)
+	}
+	out, _, err = runCmdInState(t, stateHome, "tag", "list", "prod", "--context", "prod-europe", "--dir", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "prod") {
+		t.Errorf("tags should have moved to new context name: %s", out)
+	}
+}
+
+func TestContextDeleteScrubsStateAndPrunesOrphans(t *testing.T) {
+	dir := seedKubeconfigDir(t)
+	stateHome := t.TempDir()
+
+	if _, _, err := runCmdInState(t, stateHome, "tag", "palette", "add", "prod"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runCmdInState(t, stateHome, "tag", "add", "prod", "prod", "--context", "prod-us", "--dir", dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Delete prod-us. Default mode should also prune prod-us-cluster (now
+	// unreferenced) since prod-eu stays with prod-admin which prod-us shared.
+	if _, _, err := runCmdInState(t, stateHome, "context", "delete", "prod", "prod-us", "--dir", dir); err != nil {
+		t.Fatal(err)
+	}
+	f, err := kubeconfig.Load(filepath.Join(dir, "prod.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.Config.Contexts["prod-us"]; ok {
+		t.Error("context should be deleted")
+	}
+	if _, ok := f.Config.Clusters["prod-us-cluster"]; ok {
+		t.Error("unreferenced prod-us-cluster should be pruned")
+	}
+	if _, ok := f.Config.AuthInfos["prod-admin"]; !ok {
+		t.Error("prod-admin is still referenced by prod-eu; should stay")
+	}
+
+	// Per-context tags for prod-us scrubbed.
+	out, _, err := runCmdInState(t, stateHome, "tag", "list", "prod", "--context", "prod-us", "--dir", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "no tags") {
+		t.Errorf("context tags not scrubbed: %s", out)
+	}
+}
+
+func TestContextDeleteKeepOrphansPreservesClusterAndUser(t *testing.T) {
+	dir := seedKubeconfigDir(t)
+
+	// staging.yaml has 1 context, 1 cluster, 1 user. --keep-orphans should
+	// leave all three in place.
+	if _, _, err := runCmd(t, "context", "delete", "staging", "staging", "--dir", dir, "--keep-orphans"); err != nil {
+		t.Fatal(err)
+	}
+	f, err := kubeconfig.Load(filepath.Join(dir, "staging.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.Config.Contexts["staging"]; ok {
+		t.Error("context should be deleted")
+	}
+	if _, ok := f.Config.Clusters["staging-cluster"]; !ok {
+		t.Error("cluster should survive with --keep-orphans")
+	}
+	if _, ok := f.Config.AuthInfos["staging-user"]; !ok {
+		t.Error("user should survive with --keep-orphans")
 	}
 }
 

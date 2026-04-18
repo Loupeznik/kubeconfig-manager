@@ -1,0 +1,30 @@
+.nh
+.TH "KUBECONFIG-MANAGER" "1" "Jan 0001" "kubeconfig-manager" ""
+
+.SH NAME
+kcm-context-delete - Delete a context (and its per-context tags/alerts) from a kubeconfig
+
+
+.SH SYNOPSIS
+\fBkcm context delete   [flags]\fP
+
+
+.SH DESCRIPTION
+Delete a context (and its per-context tags/alerts) from a kubeconfig
+
+
+.SH OPTIONS
+\fB--dir\fP=""
+	Kubeconfig directory (default: ~/.kube)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for delete
+
+.PP
+\fB--keep-orphans\fP[=false]
+	Keep the referenced cluster/user even if no other context uses them
+
+
+.SH SEE ALSO
+\fBkcm-context(1)\fP
