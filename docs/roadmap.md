@@ -58,6 +58,47 @@ v0.9 ships with unit tests (~70 test cases across `shell`, `state`, `kubeconfig`
 
 When a kubeconfig's contents change (credential rotation), its hash changes and the old state entry becomes orphaned. A `kcm prune` command would list and optionally remove state entries whose `path_hint` no longer points to a file with the matching hash.
 
+## Versioned documentation site
+
+The current Pages deploy publishes whatever's on `master` as a single site. For long-term maintenance we need to show docs per version (and let visitors switch between them) — standard [**`mike`**](https://github.com/jimporter/mike) is the MkDocs-native answer here.
+
+Plan:
+
+1. Install `mike` alongside `mkdocs-material` in `requirements-docs.txt`.
+2. Add a `version_provider: mike` block to `mkdocs.yml` (enables the built-in version switcher in the Material theme).
+3. Extend `.github/workflows/docs.yml`:
+   - On push to `master` → `mike deploy --push --update-aliases <dev-version> master` (or a `dev` alias).
+   - On tag push `v*` → `mike deploy --push --update-aliases <tag> latest` (makes `latest` point at the newest release).
+4. `mike` keeps all versions on the `gh-pages` branch; the site gets a version dropdown that Material renders automatically.
+
+Trade-offs: switching deploy from `actions/deploy-pages` to `mike deploy` means moving the source from Pages-artifact mode to `gh-pages` branch mode. Simple one-time flip.
+
+## Starship prompt integration
+
+[Starship](https://starship.rs/) already has a `kubernetes` module showing context + namespace. Surface kcm metadata too — tags and alert status — so users can see at a glance that the active kubeconfig is production-grade before they type a destructive verb.
+
+Plan:
+
+1. New CLI subcommand `kcm starship [--format=compact|rich] [--shell=bash|zsh|pwsh]` that prints a single-line snippet describing the active kubeconfig. It reads `$KUBECONFIG` (falling back to `~/.kube/config`), resolves the active context (or passed `--context`), then emits:
+   - `⚠ prod,eu` — alerts enabled + tags
+   - `prod,eu` — tags only, no alerts
+   - `⚠` — alerts only, no tags
+   - empty — neither; starship suppresses the module via its `when` predicate
+2. Exit 0 always; starship's `custom` modules hide themselves when output is empty.
+3. Document a drop-in starship config block in `docs/shell-integration.md`:
+
+   ```toml
+   [custom.kcm]
+   command = "kubeconfig-manager starship --format=compact"
+   when = """ test -n "$KUBECONFIG" """
+   format = "[$output]($style) "
+   style = "bold yellow"
+   ```
+
+4. Performance: starship re-invokes its custom modules on every prompt. `kcm starship` needs to be fast — skip palette bootstrap, minimize state-file reads, target <10ms. Benchmark with `hyperfine` in CI.
+
+Integrates naturally with the Helm guard plan: once that ships, the Starship output can also flag `⚠ helm-path-mismatch` when the user's last `helm` command's values-path didn't match the active context.
+
 ## Rename and delete contexts within a kubeconfig
 
 Today `kcm` can split a context out into its own file (via `kcm split`) or remove one from its source file during that operation, but there's no direct "rename this context" or "delete this context" primitive. Add both in the CLI and the TUI:
