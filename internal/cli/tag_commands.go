@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -15,6 +14,9 @@ import (
 	"github.com/loupeznik/kubeconfig-manager/internal/state"
 )
 
+// newTagCmd wires `kcm tag add|remove|list [palette]`. Tag assignments are
+// validated against the global palette — unknown tags error out unless
+// --allow-new auto-adds them to the palette.
 func newTagCmd() *cobra.Command {
 	var dir string
 	var contextName string
@@ -140,7 +142,7 @@ func newTagCmd() *cobra.Command {
 					fileTags = strings.Join(entry.Tags, ", ")
 				}
 				_, _ = fmt.Fprintf(tw, "%s\tfile\t%s\n", f.Name(), fileTags)
-				for _, ctxName := range sortedStringKeys(entry.ContextTags) {
+				for _, ctxName := range sortedContextTagKeys(entry.ContextTags) {
 					_, _ = fmt.Fprintf(tw, "%s\tctx:%s\t%s\n", f.Name(), ctxName, strings.Join(entry.ContextTags[ctxName], ", "))
 				}
 			}
@@ -151,7 +153,9 @@ func newTagCmd() *cobra.Command {
 	var allowNew bool
 	addCmd.Flags().BoolVar(&allowNew, "allow-new", false, "Add tags to the palette automatically if not present")
 
-	// Override addCmd.RunE to include palette validation.
+	// Wrap addCmd.RunE with a palette validation preflight. If the palette is
+	// empty we stay permissive (bootstrap flow), otherwise every tag must
+	// already exist unless --allow-new was passed.
 	origAddRun := addCmd.RunE
 	addCmd.RunE = func(cmd *cobra.Command, args []string) error {
 		store, err := state.DefaultStore()
@@ -196,6 +200,9 @@ func newTagCmd() *cobra.Command {
 	return cmd
 }
 
+// newTagPaletteCmd manages the global allow-list of tag names. Removing a tag
+// also scrubs it from every entry's file-level and per-context lists so the
+// state stays internally consistent.
 func newTagPaletteCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "palette",
@@ -283,284 +290,23 @@ func newTagPaletteCmd() *cobra.Command {
 	return cmd
 }
 
+// printEntryTags renders file-level + per-context tag lists for a single entry.
 func printEntryTags(out io.Writer, name string, entry state.Entry) {
 	if len(entry.Tags) == 0 {
 		_, _ = fmt.Fprintf(out, "%s [file]: no tags\n", name)
 	} else {
 		_, _ = fmt.Fprintf(out, "%s [file]: %s\n", name, strings.Join(entry.Tags, ", "))
 	}
-	for _, ctx := range sortedStringKeys(entry.ContextTags) {
+	for _, ctx := range sortedContextTagKeys(entry.ContextTags) {
 		_, _ = fmt.Fprintf(out, "%s [context %s]: %s\n", name, ctx, strings.Join(entry.ContextTags[ctx], ", "))
 	}
 }
 
-func sortedStringKeys(m map[string][]string) []string {
+func sortedContextTagKeys(m map[string][]string) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-func newAlertCmd() *cobra.Command {
-	var dir string
-	var contextName string
-
-	cmd := &cobra.Command{
-		Use:   "alert",
-		Short: "Configure destructive-action alerts per kubeconfig or context",
-	}
-
-	enableCmd := &cobra.Command{
-		Use:   "enable <file>",
-		Short: "Enable alerts (file-level, or --context for one context only)",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := mutateEntry(cmd, args[0], dir, func(_ string, e *state.Entry) error {
-				if contextName != "" {
-					if e.ContextAlerts == nil {
-						e.ContextAlerts = map[string]state.Alerts{}
-					}
-					a := e.ContextAlerts[contextName]
-					a.Enabled = true
-					if !a.RequireConfirmation && !a.ConfirmClusterName {
-						a.RequireConfirmation = true
-					}
-					if len(a.BlockedVerbs) == 0 {
-						a.BlockedVerbs = state.DefaultBlockedVerbs()
-					}
-					e.ContextAlerts[contextName] = a
-					return nil
-				}
-				e.Alerts.Enabled = true
-				if !e.Alerts.RequireConfirmation && !e.Alerts.ConfirmClusterName {
-					e.Alerts.RequireConfirmation = true
-				}
-				if len(e.Alerts.BlockedVerbs) == 0 {
-					e.Alerts.BlockedVerbs = state.DefaultBlockedVerbs()
-				}
-				return nil
-			}); err != nil {
-				return err
-			}
-			if contextName != "" {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "alerts enabled for context %s\n", contextName)
-			} else {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "alerts enabled (file-level)")
-			}
-			return nil
-		},
-	}
-
-	disableCmd := &cobra.Command{
-		Use:   "disable <file>",
-		Short: "Disable alerts (file-level, or --context for one context only)",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := mutateEntry(cmd, args[0], dir, func(_ string, e *state.Entry) error {
-				if contextName != "" {
-					if e.ContextAlerts == nil {
-						e.ContextAlerts = map[string]state.Alerts{}
-					}
-					a := e.ContextAlerts[contextName]
-					a.Enabled = false
-					e.ContextAlerts[contextName] = a
-					return nil
-				}
-				e.Alerts.Enabled = false
-				return nil
-			}); err != nil {
-				return err
-			}
-			if contextName != "" {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "alerts disabled for context %s\n", contextName)
-			} else {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "alerts disabled (file-level)")
-			}
-			return nil
-		},
-	}
-
-	showCmd := &cobra.Command{
-		Use:   "show <file>",
-		Short: "Show alert policy (file-level, per-context, or --context to filter)",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			resolvedDir, err := resolveDir(dir)
-			if err != nil {
-				return err
-			}
-			path, err := kubeconfig.ResolvePath(args[0], resolvedDir)
-			if err != nil {
-				return err
-			}
-			id, err := kubeconfig.IdentifyFile(path)
-			if err != nil {
-				return err
-			}
-			store, err := state.DefaultStore()
-			if err != nil {
-				return err
-			}
-			cfg, err := store.Load(cmd.Context())
-			if err != nil {
-				return err
-			}
-			entry, _ := cfg.GetEntry(id.StableHash, id.ContentHash)
-			out := cmd.OutOrStdout()
-			_, _ = fmt.Fprintf(out, "File: %s\n", path)
-
-			if contextName != "" {
-				printAlerts(out, "Context "+contextName, entry.ResolveAlerts(contextName))
-				if _, ok := entry.ContextAlerts[contextName]; !ok {
-					_, _ = fmt.Fprintf(out, "(no per-context override; inherits file-level policy)\n")
-				}
-				return nil
-			}
-
-			printAlerts(out, "File-level", entry.Alerts)
-			if len(entry.ContextAlerts) > 0 {
-				_, _ = fmt.Fprintln(out, "")
-				_, _ = fmt.Fprintln(out, "Per-context overrides:")
-				for _, name := range sortedKeys(entry.ContextAlerts) {
-					printAlerts(out, "  "+name, entry.ContextAlerts[name])
-				}
-			}
-			return nil
-		},
-	}
-
-	for _, c := range []*cobra.Command{enableCmd, disableCmd, showCmd} {
-		c.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
-		c.Flags().StringVar(&contextName, "context", "", "Apply to this context only (default: file-level)")
-		c.ValidArgsFunction = completeKubeconfigNames
-		_ = c.RegisterFlagCompletionFunc("context", completeContextsForArgIdx(0))
-	}
-	cmd.AddCommand(enableCmd, disableCmd, showCmd)
-	return cmd
-}
-
-func printAlerts(out io.Writer, label string, a state.Alerts) {
-	_, _ = fmt.Fprintf(out, "%s:\n", label)
-	_, _ = fmt.Fprintf(out, "  Enabled:               %t\n", a.Enabled)
-	_, _ = fmt.Fprintf(out, "  Require confirmation:  %t\n", a.RequireConfirmation)
-	_, _ = fmt.Fprintf(out, "  Confirm cluster name:  %t\n", a.ConfirmClusterName)
-	verbs := a.BlockedVerbs
-	if len(verbs) == 0 {
-		verbs = state.DefaultBlockedVerbs()
-	}
-	_, _ = fmt.Fprintf(out, "  Blocked verbs:         %s\n", strings.Join(verbs, ", "))
-}
-
-func sortedKeys(m map[string]state.Alerts) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func newRenameCmd() *cobra.Command {
-	var dir string
-	var force bool
-
-	cmd := &cobra.Command{
-		Use:   "rename <file> <new-name>",
-		Short: "Rename a kubeconfig file on disk (metadata re-binds automatically)",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			resolvedDir, err := resolveDir(dir)
-			if err != nil {
-				return err
-			}
-			oldPath, err := kubeconfig.ResolvePath(args[0], resolvedDir)
-			if err != nil {
-				return err
-			}
-
-			newName := args[1]
-			if strings.ContainsRune(newName, os.PathSeparator) {
-				return fmt.Errorf("new name %q must not contain path separators", newName)
-			}
-			newPath := filepath.Join(filepath.Dir(oldPath), newName)
-			if oldPath == newPath {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "name unchanged")
-				return nil
-			}
-			if _, err := os.Stat(newPath); err == nil && !force {
-				return fmt.Errorf("destination %s already exists (pass --force to overwrite)", newPath)
-			}
-
-			id, err := kubeconfig.IdentifyFile(oldPath)
-			if err != nil {
-				return err
-			}
-			if err := os.Rename(oldPath, newPath); err != nil {
-				return fmt.Errorf("rename: %w", err)
-			}
-
-			store, err := state.DefaultStore()
-			if err != nil {
-				return err
-			}
-			if err := store.Mutate(cmd.Context(), func(cfg *state.Config) error {
-				entry, ok := cfg.GetEntry(id.StableHash, id.ContentHash)
-				if !ok {
-					return nil
-				}
-				entry = cfg.TakeEntry(id.StableHash, id.ContentHash)
-				entry.PathHint = filepath.Base(newPath)
-				entry.Touch()
-				cfg.Entries[id.StableHash] = entry
-				return nil
-			}); err != nil {
-				return fmt.Errorf("rename file succeeded but state update failed: %w", err)
-			}
-
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "renamed %s -> %s\n", filepath.Base(oldPath), filepath.Base(newPath))
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&dir, "dir", "", "Kubeconfig directory (default: ~/.kube)")
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite destination if it exists")
-	cmd.ValidArgsFunction = func(c *cobra.Command, args []string, tc string) ([]string, cobra.ShellCompDirective) {
-		// Only the first positional (the source kubeconfig) is completable;
-		// the second positional is a free-form new filename.
-		if len(args) > 0 {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		}
-		return completeKubeconfigNames(c, args, tc)
-	}
-	return cmd
-}
-
-func mutateEntry(cmd *cobra.Command, nameOrPath, dir string, fn func(path string, e *state.Entry) error) error {
-	resolvedDir, err := resolveDir(dir)
-	if err != nil {
-		return err
-	}
-	path, err := kubeconfig.ResolvePath(nameOrPath, resolvedDir)
-	if err != nil {
-		return err
-	}
-	id, err := kubeconfig.IdentifyFile(path)
-	if err != nil {
-		return err
-	}
-	store, err := state.DefaultStore()
-	if err != nil {
-		return err
-	}
-	return store.Mutate(cmd.Context(), func(cfg *state.Config) error {
-		entry := cfg.TakeEntry(id.StableHash, id.ContentHash)
-		entry.PathHint = filepath.Base(path)
-		if err := fn(path, &entry); err != nil {
-			return err
-		}
-		entry.Touch()
-		cfg.Entries[id.StableHash] = entry
-		return nil
-	})
 }
