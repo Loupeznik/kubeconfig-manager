@@ -60,7 +60,7 @@ func runInit(ctx context.Context, out io.Writer, opts initOptions) error {
 	if seedPalette && !opts.AssumeYes {
 		if err := huh.NewConfirm().
 			Title("Seed the tag palette with a starter set?").
-			Description("Tags: "+strings.Join(paletteTags, ", ")).
+			Description("Tags: " + strings.Join(paletteTags, ", ")).
 			Affirmative("Yes").
 			Negative("Skip").
 			Value(&seedPalette).
