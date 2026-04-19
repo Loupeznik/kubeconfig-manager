@@ -1,0 +1,5 @@
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY kcm /usr/local/bin/kcm
+COPY LICENSE NOTICE /
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/kcm"]

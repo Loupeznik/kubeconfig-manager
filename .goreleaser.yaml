@@ -41,6 +41,59 @@ archives:
       - README.md
       - docs/**/*
 
+dockers:
+  - id: kcm-amd64
+    image_templates:
+      - "ghcr.io/loupeznik/kubeconfig-manager:{{ .Version }}-amd64"
+      - "ghcr.io/loupeznik/kubeconfig-manager:latest-amd64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    goos: linux
+    goarch: amd64
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.source=https://github.com/loupeznik/kubeconfig-manager"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=TUI + CLI for managing kubeconfig files and kubectl contexts"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .Commit }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+    extra_files:
+      - LICENSE
+      - NOTICE
+
+  - id: kcm-arm64
+    image_templates:
+      - "ghcr.io/loupeznik/kubeconfig-manager:{{ .Version }}-arm64"
+      - "ghcr.io/loupeznik/kubeconfig-manager:latest-arm64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    goos: linux
+    goarch: arm64
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.source=https://github.com/loupeznik/kubeconfig-manager"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=TUI + CLI for managing kubeconfig files and kubectl contexts"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .Commit }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+    extra_files:
+      - LICENSE
+      - NOTICE
+
+docker_manifests:
+  - name_template: "ghcr.io/loupeznik/kubeconfig-manager:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/loupeznik/kubeconfig-manager:{{ .Version }}-amd64"
+      - "ghcr.io/loupeznik/kubeconfig-manager:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/loupeznik/kubeconfig-manager:latest"
+    image_templates:
+      - "ghcr.io/loupeznik/kubeconfig-manager:latest-amd64"
+      - "ghcr.io/loupeznik/kubeconfig-manager:latest-arm64"
+
 checksum:
   name_template: "checksums.txt"
 
