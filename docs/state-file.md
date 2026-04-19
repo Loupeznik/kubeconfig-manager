@@ -21,7 +21,7 @@ available_tags:                           # global tag palette (allow-list for t
   - critical
 
 helm_guard:                               # global helm values-path / context mismatch detector
-  enabled: true
+  enabled: true                           # tri-state: absent field = default ON; explicit false = opt out
   patterns:                               # ordered list; first match wins
     - "clusters/{name}/"
     - "environments/{name}/"
@@ -72,9 +72,9 @@ For a given kubectl invocation, `kcm` resolves the active context (from `--conte
 
 The helm values-path guard has its own two-scope resolution:
 
-1. `entries[hash].helm_guard` if present — per-entry policy. A nil/absent field inherits the global block. A struct with `enabled: false` explicitly suppresses the global policy for this entry.
+1. `entries[hash].helm_guard` if present — per-entry policy. A nil/absent field inherits the global block. A struct with `enabled: false` explicitly suppresses the guard for this entry.
 2. Otherwise, the root `helm_guard` block. Its `patterns` list is tried in order, first match wins. When none match and `global_fallback: true`, the raw values-file path is tokenized and compared directly against the active context/cluster + environment tokens.
-3. Otherwise, the guard is off.
+3. Otherwise, the guard **defaults to ON** — it's a safety feature, so a fresh install with no config protects the user without opt-in. The `enabled` field is tri-state: absent (→ default ON), explicit `true`, or explicit `false`.
 
 `global_fallback` is OR-merged: either per-entry OR global being true enables the fallback. There's no tri-state, so a per-entry explicit `false` doesn't suppress the global fallback — if you need that, disable the entry entirely.
 

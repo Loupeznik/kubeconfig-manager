@@ -28,20 +28,20 @@ The match has three outcomes:
 
 ## Enabling the guard
 
-The guard is **off by default.** Turn it on globally or per-kubeconfig:
+The guard is **on by default** — as a safety feature, it protects every kubeconfig without any configuration. You can still turn it off explicitly, globally or per-kubeconfig:
 
 ```sh
-# Globally — applies to every kubeconfig unless overridden
-kubeconfig-manager helm-guard enable
+# Opt out globally (you almost certainly don't want this)
+kubeconfig-manager helm-guard disable
 
-# Per-kubeconfig — overrides the global setting for this one file
-kubeconfig-manager helm-guard enable --file ~/.kube/prod.yaml
-
-# Explicitly disable for one kubeconfig while global stays on
+# Opt out for one specific kubeconfig (e.g. a throwaway sandbox)
 kubeconfig-manager helm-guard disable --file ~/.kube/sandbox.yaml
+
+# Re-enable after a previous disable (explicit form)
+kubeconfig-manager helm-guard enable --file ~/.kube/prod.yaml
 ```
 
-Resolution order: per-entry override > global > off (default).
+Resolution order: per-entry override > global > default (ON). A per-entry `enabled: false` is an explicit suppression and wins over the global default.
 
 View the effective policy:
 

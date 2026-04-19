@@ -94,7 +94,7 @@ func EvaluateHelm(ctx context.Context, store state.Store, kubeconfigEnv string, 
 	d.ClusterName = res.ClusterName
 
 	policy := res.Entry.ResolveHelmGuard(cfg.HelmGuard)
-	if !policy.Enabled {
+	if !policy.IsEnabled() {
 		return d, nil
 	}
 	d.Policy = policy

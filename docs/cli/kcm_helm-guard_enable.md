@@ -1,6 +1,6 @@
 ## kcm helm-guard enable
 
-Enable the helm guard globally (default) or for a specific kubeconfig with --file
+Explicitly re-enable the helm guard (on by default) globally or for a specific kubeconfig with --file
 
 ```
 kcm helm-guard enable [flags]

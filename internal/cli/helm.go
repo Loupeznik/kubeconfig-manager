@@ -71,6 +71,20 @@ func newHelmCmd() *cobra.Command {
 	return cmd
 }
 
+// describeEnabled renders the tri-state Enabled field. "true (default)" when
+// nobody has configured it — makes the default explicit in show output so
+// users don't have to memorize the policy. "true" / "false" when explicitly
+// set. The Effective/resolved section of `show` always sees a non-nil value.
+func describeEnabled(p *bool) string {
+	if p == nil {
+		return "true (default)"
+	}
+	if *p {
+		return "true"
+	}
+	return "false"
+}
+
 // firstHelmVerb returns the first non-flag token from args, which is helm's
 // subcommand ("upgrade", "install", ...). Empty string when args start with
 // a flag or are empty.
@@ -110,10 +124,10 @@ func newHelmGuardEnableCmd() *cobra.Command {
 	var dir, file string
 	cmd := &cobra.Command{
 		Use:   "enable",
-		Short: "Enable the helm guard globally (default) or for a specific kubeconfig with --file",
+		Short: "Explicitly re-enable the helm guard (on by default) globally or for a specific kubeconfig with --file",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return mutateHelmGuard(cmd, dir, file, func(hg *state.HelmGuard) {
-				hg.Enabled = true
+				hg.Enabled = state.BoolPtr(true)
 			}, "enabled")
 		},
 	}
@@ -130,10 +144,10 @@ func newHelmGuardDisableCmd() *cobra.Command {
 	var dir, file string
 	cmd := &cobra.Command{
 		Use:   "disable",
-		Short: "Disable the helm guard globally (default) or override per --file",
+		Short: "Disable the helm guard globally or override per --file",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return mutateHelmGuard(cmd, dir, file, func(hg *state.HelmGuard) {
-				hg.Enabled = false
+				hg.Enabled = state.BoolPtr(false)
 			}, "disabled")
 		},
 	}
@@ -349,7 +363,7 @@ func newHelmGuardShowCmd() *cobra.Command {
 
 func printHelmGuard(out io.Writer, label string, hg state.HelmGuard) {
 	_, _ = fmt.Fprintf(out, "%s:\n", label)
-	_, _ = fmt.Fprintf(out, "  Enabled:          %t\n", hg.Enabled)
+	_, _ = fmt.Fprintf(out, "  Enabled:          %s\n", describeEnabled(hg.Enabled))
 	patterns := hg.Patterns
 	patternSuffix := ""
 	if len(patterns) == 0 {

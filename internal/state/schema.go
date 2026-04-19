@@ -50,8 +50,13 @@ type Alerts struct {
 
 // HelmGuard configures the helm values-path ↔ context mismatch detector.
 // Applied at two scopes with per-entry overriding global (see ResolveHelmGuard).
+//
+// Enabled is tri-state on purpose: nil means "never configured, use the
+// default" (which is ON — the guard is safety-critical and users expect it
+// to protect them out of the box), while an explicit pointer to false is the
+// result of `kcm helm-guard disable` and overrides the default.
 type HelmGuard struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled *bool `yaml:"enabled,omitempty"`
 	// Patterns is the ordered list of values-file path templates used to
 	// extract a cluster/env name. Each pattern must contain one "{name}"
 	// placeholder (capture group stops at the next slash). The first pattern
@@ -71,12 +76,26 @@ type HelmGuard struct {
 	RequireConfirmation bool `yaml:"require_confirmation,omitempty"`
 }
 
+// IsEnabled returns the effective Enabled value, defaulting to true when the
+// pointer is nil. Call on the resolved HelmGuard (after ResolveHelmGuard),
+// not on the raw per-entry or global struct.
+func (h HelmGuard) IsEnabled() bool {
+	if h.Enabled == nil {
+		return true
+	}
+	return *h.Enabled
+}
+
+// BoolPtr is a small helper for constructing *bool literals in state mutators
+// and tests. Exported because both internal/cli/helm.go and test code need it.
+func BoolPtr(b bool) *bool { return &b }
+
 // UnmarshalYAML accepts the legacy `pattern: "foo"` scalar field (pre-v0.11)
 // and folds it into Patterns so on-disk state from earlier versions keeps
 // working. Marshaling is never done in the legacy form.
 func (h *HelmGuard) UnmarshalYAML(node *yaml.Node) error {
 	type raw struct {
-		Enabled             bool     `yaml:"enabled"`
+		Enabled             *bool    `yaml:"enabled,omitempty"`
 		Patterns            []string `yaml:"patterns,omitempty"`
 		Pattern             string   `yaml:"pattern,omitempty"`
 		GlobalFallback      bool     `yaml:"global_fallback,omitempty"`
@@ -132,15 +151,23 @@ func NewConfig() *Config {
 // ---- resolvers -------------------------------------------------------------
 
 // ResolveHelmGuard returns the effective HelmGuard for this entry, falling
-// back from per-entry to global. A per-entry nil means "inherit global";
-// a per-entry struct with Enabled=false is an explicit override to suppress.
+// back from per-entry to global. A per-entry nil struct means "inherit global";
+// a per-entry struct with Enabled set to a non-nil false pointer is an
+// explicit override to suppress.
 //
-// GlobalFallback uses OR-semantics (per-entry OR global): either side
-// turning it on enables the pattern-less fallback. This avoids a tri-state
-// field while keeping the common "turn it on once globally" setup simple.
+// Enabled is tri-state: per-entry takes precedence; if per-entry didn't touch
+// it, global applies; if neither was set, the default is ON (the guard is a
+// safety feature users expect to work out of the box).
+//
+// GlobalFallback uses OR-semantics (per-entry OR global): either side turning
+// it on enables the pattern-less fallback. This avoids a tri-state field for
+// a toggle that has no reasonable "explicit disable" use case.
 func (e Entry) ResolveHelmGuard(global HelmGuard) HelmGuard {
 	base := global
 	if e.HelmGuard == nil {
+		if base.Enabled == nil {
+			base.Enabled = BoolPtr(true)
+		}
 		if len(base.Patterns) == 0 {
 			base.Patterns = []string{DefaultHelmPattern}
 		}
@@ -150,6 +177,12 @@ func (e Entry) ResolveHelmGuard(global HelmGuard) HelmGuard {
 		return base
 	}
 	out := *e.HelmGuard
+	if out.Enabled == nil {
+		out.Enabled = base.Enabled
+	}
+	if out.Enabled == nil {
+		out.Enabled = BoolPtr(true)
+	}
 	if len(out.Patterns) == 0 {
 		out.Patterns = base.Patterns
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/adrg/xdg"
 
+	"github.com/loupeznik/kubeconfig-manager/internal/guard"
 	"github.com/loupeznik/kubeconfig-manager/internal/kubeconfig"
 	"github.com/loupeznik/kubeconfig-manager/internal/state"
 )
@@ -767,11 +768,36 @@ func TestHelmGuardDefaultShow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Global") || !strings.Contains(out, "Enabled:          false") {
-		t.Errorf("default global helm-guard should be disabled, got: %s", out)
+	if !strings.Contains(out, "Global") || !strings.Contains(out, "Enabled:          true (default)") {
+		t.Errorf("default global helm-guard should be enabled-by-default, got: %s", out)
 	}
 	if !strings.Contains(out, "clusters/{name}/") {
 		t.Errorf("default pattern missing: %s", out)
+	}
+}
+
+func TestHelmGuardDefaultOnFiresWithoutExplicitEnable(t *testing.T) {
+	// The whole point of the default-on change: a fresh install should catch
+	// a prod/test mismatch without anyone running `kcm helm-guard enable`.
+	dir := seedKubeconfigDir(t)
+	stateHome := t.TempDir()
+	isolateState(t, stateHome)
+
+	prod := filepath.Join(dir, "prod.yaml")
+
+	store, err := state.DefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Do NOT call `helm-guard enable` — we specifically want the default-on
+	// behavior to catch a mismatch.
+	d, err := guard.EvaluateHelm(context.Background(), store, prod,
+		[]string{"upgrade", "-f", "repo/clusters/k8s-test-01/values.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.Alert() {
+		t.Fatal("expected default-on helm-guard to fire on prod/test mismatch")
 	}
 }
 
@@ -785,8 +811,10 @@ func TestHelmGuardGlobalEnableDisable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Enabled:          true") {
-		t.Errorf("expected enabled, got: %s", out)
+	// After explicit enable, the "(default)" suffix drops and the boolean
+	// renders as plain "true".
+	if !strings.Contains(out, "Enabled:          true\n") {
+		t.Errorf("expected explicit enabled, got: %s", out)
 	}
 
 	if _, _, err := runCmdInState(t, stateHome, "helm-guard", "disable"); err != nil {
@@ -796,8 +824,8 @@ func TestHelmGuardGlobalEnableDisable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Enabled:          false") {
-		t.Errorf("expected disabled after disable, got: %s", out)
+	if !strings.Contains(out, "Enabled:          false\n") {
+		t.Errorf("expected explicit disabled after disable, got: %s", out)
 	}
 }
 

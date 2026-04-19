@@ -1,6 +1,6 @@
 ## kcm helm-guard disable
 
-Disable the helm guard globally (default) or override per --file
+Disable the helm guard globally or override per --file
 
 ```
 kcm helm-guard disable [flags]

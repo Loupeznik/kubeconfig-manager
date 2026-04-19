@@ -63,9 +63,9 @@ The content-hash key was the v0.8.x default; `state.Config.TakeEntry` falls back
 An `Alerts{Enabled:false}` in `ContextAlerts[name]` with any other field set is treated as an explicit override suppressing the file-level policy.
 
 **helm (values-path guard, `internal/guard/helm.go`):**
-1. Per-entry `HelmGuard` override. A nil pointer means inherit; a struct with `Enabled=false` explicitly disables.
+1. Per-entry `HelmGuard` override. A nil pointer on the entry means inherit; a struct with `Enabled` pointing at `false` explicitly disables.
 2. Global `helm_guard` root block.
-3. Falls back to `DefaultHelmPattern` ("clusters/{name}/") + `DefaultEnvTokens()`.
+3. Falls back to `DefaultHelmPattern` ("clusters/{name}/") + `DefaultEnvTokens()`, with the guard **enabled by default** when neither side set `Enabled`. The field is `*bool` so "never configured" is distinguishable from "explicitly off"; `HelmGuard.IsEnabled()` resolves the effective boolean.
 
 Pattern matching tries each pattern in `Patterns` in order; the first match wins. When none match and `GlobalFallback=true`, the raw path is tokenized and compared directly.
 

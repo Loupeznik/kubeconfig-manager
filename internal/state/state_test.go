@@ -235,7 +235,7 @@ entries: {}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.HelmGuard.Enabled {
+	if !cfg.HelmGuard.IsEnabled() {
 		t.Error("enabled flag lost after legacy load")
 	}
 	if len(cfg.HelmGuard.Patterns) != 1 || cfg.HelmGuard.Patterns[0] != "envs/{name}/" {
@@ -374,7 +374,7 @@ func TestConcurrentMutatesAllFields(t *testing.T) {
 					if entry.HelmGuard == nil {
 						entry.HelmGuard = &HelmGuard{}
 					}
-					entry.HelmGuard.Enabled = true
+					entry.HelmGuard.Enabled = BoolPtr(true)
 					entry.HelmGuard.Patterns = append(entry.HelmGuard.Patterns, "p/{name}/")
 				}
 				entry.Touch()
@@ -396,7 +396,7 @@ func TestConcurrentMutatesAllFields(t *testing.T) {
 	if len(entry.Tags) == 0 {
 		t.Error("tags never persisted")
 	}
-	if entry.HelmGuard == nil || !entry.HelmGuard.Enabled {
+	if entry.HelmGuard == nil || !entry.HelmGuard.IsEnabled() {
 		t.Error("helm_guard never persisted")
 	}
 	if _, has := entry.ContextAlerts["ctx"]; !has {

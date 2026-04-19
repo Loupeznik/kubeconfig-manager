@@ -178,7 +178,10 @@ func writeHelmKubeconfig(t *testing.T, dir, name string) string {
 	return path
 }
 
-func TestEvaluateHelmDisabledByDefault(t *testing.T) {
+func TestEvaluateHelmEnabledByDefault(t *testing.T) {
+	// The guard is a safety feature and users expect it to be on out of the
+	// box. An unconfigured state + the default pattern must still catch an
+	// obvious prod/test mismatch.
 	dir := t.TempDir()
 	path := writeHelmKubeconfig(t, dir, "prod.yaml")
 	store := newTestStore(t)
@@ -188,8 +191,30 @@ func TestEvaluateHelmDisabledByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !d.Alert() {
+		t.Error("helm-guard default should be on; alert did not fire on prod vs test")
+	}
+}
+
+func TestEvaluateHelmExplicitlyDisabledSuppresses(t *testing.T) {
+	dir := t.TempDir()
+	path := writeHelmKubeconfig(t, dir, "prod.yaml")
+	store := newTestStore(t)
+
+	if err := store.Mutate(context.Background(), func(cfg *state.Config) error {
+		cfg.HelmGuard = state.HelmGuard{Enabled: state.BoolPtr(false)}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := EvaluateHelm(context.Background(), store, path,
+		[]string{"upgrade", "-f", "clusters/test/values.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if d.Alert() {
-		t.Error("helm-guard default should be disabled; alert fired")
+		t.Error("explicit Enabled=false should suppress the default-on guard")
 	}
 }
 
@@ -200,7 +225,7 @@ func TestEvaluateHelmGlobalEnableCatchesMismatch(t *testing.T) {
 
 	// Enable globally.
 	if err := store.Mutate(context.Background(), func(cfg *state.Config) error {
-		cfg.HelmGuard = state.HelmGuard{Enabled: true}
+		cfg.HelmGuard = state.HelmGuard{Enabled: state.BoolPtr(true)}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -230,10 +255,10 @@ func TestEvaluateHelmPerEntryOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.Mutate(context.Background(), func(cfg *state.Config) error {
-		cfg.HelmGuard = state.HelmGuard{Enabled: true}
+		cfg.HelmGuard = state.HelmGuard{Enabled: state.BoolPtr(true)}
 		cfg.Entries[id.StableHash] = state.Entry{
 			PathHint:  "prod.yaml",
-			HelmGuard: &state.HelmGuard{Enabled: false},
+			HelmGuard: &state.HelmGuard{Enabled: state.BoolPtr(false)},
 		}
 		return nil
 	}); err != nil {
@@ -263,7 +288,7 @@ func TestEvaluateHelmCustomPatternPerEntry(t *testing.T) {
 		cfg.Entries[id.StableHash] = state.Entry{
 			PathHint: "prod.yaml",
 			HelmGuard: &state.HelmGuard{
-				Enabled:  true,
+				Enabled:  state.BoolPtr(true),
 				Patterns: []string{"envs/{name}/"},
 			},
 		}
@@ -299,7 +324,7 @@ func TestEvaluateHelmNoMismatchWhenPathMatchesContext(t *testing.T) {
 	store := newTestStore(t)
 
 	if err := store.Mutate(context.Background(), func(cfg *state.Config) error {
-		cfg.HelmGuard = state.HelmGuard{Enabled: true}
+		cfg.HelmGuard = state.HelmGuard{Enabled: state.BoolPtr(true)}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -328,7 +353,7 @@ func TestEvaluateHelmMultiplePatternsPerEntry(t *testing.T) {
 		cfg.Entries[id.StableHash] = state.Entry{
 			PathHint: "prod.yaml",
 			HelmGuard: &state.HelmGuard{
-				Enabled:  true,
+				Enabled:  state.BoolPtr(true),
 				Patterns: []string{"envs/{name}/", "clusters/{name}/"},
 			},
 		}
@@ -375,7 +400,7 @@ func TestEvaluateHelmGlobalFallbackCatchesIrregularLayout(t *testing.T) {
 
 	if err := store.Mutate(context.Background(), func(cfg *state.Config) error {
 		cfg.HelmGuard = state.HelmGuard{
-			Enabled:        true,
+			Enabled:        state.BoolPtr(true),
 			GlobalFallback: true,
 		}
 		return nil
@@ -404,7 +429,7 @@ func TestEvaluateHelmGlobalFallbackDisabledStillSilent(t *testing.T) {
 	store := newTestStore(t)
 
 	if err := store.Mutate(context.Background(), func(cfg *state.Config) error {
-		cfg.HelmGuard = state.HelmGuard{Enabled: true}
+		cfg.HelmGuard = state.HelmGuard{Enabled: state.BoolPtr(true)}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -427,7 +452,7 @@ func TestEvaluateHelmMultipleValuesFiles(t *testing.T) {
 	store := newTestStore(t)
 
 	if err := store.Mutate(context.Background(), func(cfg *state.Config) error {
-		cfg.HelmGuard = state.HelmGuard{Enabled: true}
+		cfg.HelmGuard = state.HelmGuard{Enabled: state.BoolPtr(true)}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
