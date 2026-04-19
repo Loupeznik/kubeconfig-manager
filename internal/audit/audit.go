@@ -65,7 +65,7 @@ func AppendAt(path string, e Event) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = f.WriteString(formatEvent(e))
 	return err
 }
@@ -81,7 +81,7 @@ func Tail(path string, n int) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return tailLines(f, n)
 }
 

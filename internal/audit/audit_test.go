@@ -3,6 +3,7 @@ package audit
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -23,12 +24,15 @@ func TestAppendAndTail(t *testing.T) {
 	}
 
 	// Perms should be 0600 so a shared machine can't read past prompts.
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if mode := info.Mode().Perm(); mode != 0o600 {
-		t.Errorf("audit file mode: got %o, want 0600", mode)
+	// Windows doesn't map POSIX bits cleanly onto ACLs, so skip there.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mode := info.Mode().Perm(); mode != 0o600 {
+			t.Errorf("audit file mode: got %o, want 0600", mode)
+		}
 	}
 
 	// Tail returns lines in order; a large n returns all.
