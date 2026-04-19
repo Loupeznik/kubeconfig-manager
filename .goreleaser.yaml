@@ -61,7 +61,7 @@ dockers_v2:
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.revision: "{{ .Commit }}"
       org.opencontainers.image.created: "{{ .Date }}"
-      org.opencontainers.image.licenses: MIT
+      org.opencontainers.image.licenses: Apache-2.0
     extra_files:
       - LICENSE
       - NOTICE
@@ -73,6 +73,57 @@ docker_signs:
       - sign
       - --yes
       - "${artifact}@${digest}"
+
+brews:
+  - name: kcm
+    ids:
+      - kcm
+    repository:
+      owner: Loupeznik
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/Loupeznik/kubeconfig-manager"
+    description: "TUI + CLI for managing kubeconfig files and kubectl contexts"
+    license: "Apache-2.0"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    install: |
+      bin.install "kcm"
+      man1.install Dir["docs/man/*.1"]
+      generate_completions_from_executable(bin/"kcm", "completion", shells: [:bash, :zsh, :fish])
+    test: |
+      system "#{bin}/kcm", "--version"
+    skip_upload: auto
+
+aurs:
+  - name: kubeconfig-manager-bin
+    ids:
+      - kcm
+    homepage: "https://github.com/Loupeznik/kubeconfig-manager"
+    description: "TUI + CLI for managing kubeconfig files and kubectl contexts"
+    maintainers:
+      - 'Dominik Zarsky <dzarsky@dzarsky.eu>'
+    license: "Apache-2.0"
+    private_key: "{{ .Env.AUR_KEY }}"
+    git_url: "ssh://aur@aur.archlinux.org/kubeconfig-manager-bin.git"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    package: |-
+      install -Dm755 "./kcm" "${pkgdir}/usr/bin/kcm"
+      install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+      install -Dm644 "./NOTICE" "${pkgdir}/usr/share/licenses/${pkgname}/NOTICE"
+      for mf in ./docs/man/*.1; do
+        install -Dm644 "$mf" "${pkgdir}/usr/share/man/man1/$(basename "$mf")"
+      done
+      mkdir -p "${pkgdir}/usr/share/bash-completion/completions"
+      "./kcm" completion bash > "${pkgdir}/usr/share/bash-completion/completions/kcm"
+      mkdir -p "${pkgdir}/usr/share/zsh/site-functions"
+      "./kcm" completion zsh  > "${pkgdir}/usr/share/zsh/site-functions/_kcm"
+      mkdir -p "${pkgdir}/usr/share/fish/vendor_completions.d"
+      "./kcm" completion fish > "${pkgdir}/usr/share/fish/vendor_completions.d/kcm.fish"
 
 checksum:
   name_template: "checksums.txt"
