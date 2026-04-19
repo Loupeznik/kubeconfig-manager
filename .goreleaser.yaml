@@ -74,27 +74,32 @@ docker_signs:
       - --yes
       - "${artifact}@${digest}"
 
-brews:
+homebrew_casks:
   - name: kcm
     ids:
       - kcm
+    binaries: [kcm]
+    directory: Casks
     repository:
       owner: Loupeznik
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
     homepage: "https://github.com/Loupeznik/kubeconfig-manager"
     description: "TUI + CLI for managing kubeconfig files and kubectl contexts"
     license: "Apache-2.0"
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com
-    install: |
-      bin.install "kcm"
-      man1.install Dir["docs/man/*.1"]
-      generate_completions_from_executable(bin/"kcm", "completion", shells: [:bash, :zsh, :fish])
-    test: |
-      system "#{bin}/kcm", "--version"
+    # Strip macOS Gatekeeper quarantine xattr on the unsigned binary so
+    # Gatekeeper doesn't refuse to run it on the user's Mac after download.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/kcm"]
+          end
+    manpages:
+      - docs/man/*.1
     skip_upload: auto
 
 aurs:

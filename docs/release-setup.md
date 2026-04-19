@@ -20,7 +20,7 @@ cosign verify ghcr.io/loupeznik/kubeconfig-manager:<tag> \
 
 ## Homebrew tap
 
-The short answer: yes, an **empty public repo + a PAT** is the whole setup. Homebrew doesn't require any central registration for third-party taps — any repo named `homebrew-<suffix>` works. The pieces and the two gotchas:
+The short answer: an **empty public repo + a PAT** is the whole setup. Homebrew doesn't require any central registration for third-party taps — any repo named `homebrew-<suffix>` works.
 
 1. **Repo name must be `Loupeznik/homebrew-tap`** (the `homebrew-` prefix is mandatory — `brew tap loupeznik/tap` drops the prefix and looks for `homebrew-tap` under the `loupeznik` org). Make it **public**. Leave it empty; goreleaser creates the first commit.
 2. **Personal access token**. Create a **classic** PAT (fine-grained tokens don't always cover the push-to-another-repo case goreleaser needs). Scope: `repo`. Expiry ≥ 1 year. Add it as the `HOMEBREW_TAP_TOKEN` Actions secret on the kubeconfig-manager repo.
@@ -28,24 +28,41 @@ The short answer: yes, an **empty public repo + a PAT** is the whole setup. Home
 
 On release, goreleaser:
 
-- Generates `Formula/kcm.rb` under the `Formula/` directory of the tap repo (we pin `directory: Formula` in `.goreleaser.yaml`).
+- Generates `Casks/kcm.rb` under the `Casks/` directory of the tap repo.
 - Commits + pushes as `goreleaserbot`.
-- Attaches the archive URL + SHA-256 of the tarball goreleaser just built for the target arch/OS.
+- Attaches the archive URL + SHA-256 of the tarball goreleaser just built for each target arch/OS.
+- Includes a `post_install` hook that strips the macOS Gatekeeper quarantine xattr so the unsigned binary runs without a Gatekeeper prompt on first launch.
 
-Users then install either way:
+Users install with:
 
 ```sh
-brew install loupeznik/tap/kcm                 # one-liner
+brew install --cask loupeznik/tap/kcm          # explicit cask form
 # or
-brew tap loupeznik/tap && brew install kcm     # two-step
+brew install loupeznik/tap/kcm                  # auto-detects the cask
 ```
 
-The formula installs the binary + man pages under `man1/`, and generates bash/zsh/fish completions via `kcm completion` at install time.
+### Formula → Cask migration (v0.10.1 → v0.10.2)
+
+v0.10.1 shipped as a brew **formula** (`Formula/kcm.rb`). Starting with v0.10.2 we ship as a **cask** (`Casks/kcm.rb`) because goreleaser deprecated the formula generator in favour of the cask one (see [goreleaser.com/deprecations#brews](https://goreleaser.com/deprecations#brews)).
+
+One-time tap cleanup to keep existing users on a smooth upgrade path:
+
+1. Delete `Formula/kcm.rb` from the `Loupeznik/homebrew-tap` repo. (goreleaser writes the new cask to `Casks/`; leaving the old formula around causes brew to prefer it.)
+2. Add a `tap_migrations.json` at the tap repo root so `brew update` auto-redirects users from the removed formula to the new cask:
+
+    ```json
+    {
+      "kcm": "loupeznik/tap"
+    }
+    ```
+
+    Commit both changes to `homebrew-tap/master` before tagging v0.10.2.
+3. Existing users run `brew update && brew upgrade` and brew re-installs as a cask under the hood.
 
 Gotchas to know about:
 
-- **First release will fail with `HOMEBREW_TAP_TOKEN` unset.** Set the secret before tagging, or the `brews:` stage errors at the push step. The rest of the release (GitHub release, ghcr, AUR) still completes because goreleaser runs them in parallel.
-- **`brew audit` is not enforced.** That's only for homebrew-core submissions. Third-party taps can ship anything that parses as a Ruby formula.
+- **`HOMEBREW_TAP_TOKEN` is required.** If unset when you tag, the `homebrew_casks:` stage errors at the push step. The rest of the release (GitHub release, ghcr, AUR) still completes because goreleaser runs them in parallel.
+- **`brew audit` is not enforced.** That's only for homebrew-core submissions. Third-party taps can ship anything that parses as a Ruby cask/formula.
 - **The tap repo doesn't need to exist before the first release** — goreleaser will push the first commit regardless. But creating it yourself means you can set up branch protection, a README, and a topic (`homebrew-tap`) upfront.
 
 ## AUR (Arch User Repository)
