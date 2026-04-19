@@ -99,7 +99,7 @@ When a CI run surfaces a "Node.js 20 actions are deprecated" warning (or similar
 Current pins worth knowing about:
 - `actions/checkout@v6`, `actions/setup-go@v6` — Node 24 era.
 - `docker/{login,setup-buildx,setup-qemu}-action@v4` — Node 24 majors; v3 was Node 20.
-- `sigstore/cosign-installer@v4` — matches the v4 docker actions.
+- `sigstore/cosign-installer@v4.1.1` — pinned to a specific version because the repo doesn't publish a floating `v4` tag. Bump to the latest v4.x.x when touching this action; check `gh api repos/sigstore/cosign-installer/tags` first.
 - `goreleaser/goreleaser-action@v7` with `version: '~> v2.14'` — the action version (@v7) and the goreleaser binary version (`~> v2.14`) are independent pins; both matter.
 - `golangci/golangci-lint-action@v9` with `version: latest` — the outer action is pinned, the inner golangci-lint binary is `latest`. Tightening the binary pin is future work.
 
