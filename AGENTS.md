@@ -92,6 +92,7 @@ Commit the regenerated `docs/cli/*.md` and `docs/man/*.1` in the same commit as 
 - `.goreleaser.yaml` uses `dockers_v2:` (requires goreleaser ≥ 2.14). Pinned to `~> v2.14` in both workflows.
 - `Dockerfile.goreleaser` is the v2-compatible dockerfile; the top-level `Dockerfile` is for local `docker build .` dev use.
 - Multi-arch image published to `ghcr.io/loupeznik/kubeconfig-manager:{version,latest}` on tag push (v*). Prereleases do not get the `latest` tag.
+- Images are signed keyless with cosign against the GitHub Actions OIDC identity. Verify with `cosign verify ghcr.io/loupeznik/kubeconfig-manager:<tag> --certificate-identity-regexp='https://github.com/Loupeznik/kubeconfig-manager/.github/workflows/release.yml@.*' --certificate-oidc-issuer='https://token.actions.githubusercontent.com'`.
 
 ## Things to avoid
 

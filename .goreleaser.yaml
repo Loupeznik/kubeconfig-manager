@@ -66,6 +66,14 @@ dockers_v2:
       - LICENSE
       - NOTICE
 
+docker_signs:
+  - cmd: cosign
+    artifacts: all
+    args:
+      - sign
+      - --yes
+      - "${artifact}@${digest}"
+
 checksum:
   name_template: "checksums.txt"
 
