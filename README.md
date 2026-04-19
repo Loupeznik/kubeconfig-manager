@@ -5,6 +5,8 @@
 
 `kcm` — a TUI + CLI for managing local kubeconfig files and kubectl contexts, with tagging and destructive-action guardrails.
 
+![kubeconfig-manager demo](docs/images/demo.gif)
+
 Full docs live in [`docs/`](docs/README.md) — start with [Getting started](docs/getting-started.md).
 
 ## Features
