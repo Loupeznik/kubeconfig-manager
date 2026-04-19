@@ -58,7 +58,7 @@ func newImportCmd() *cobra.Command {
 			if dryRun {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 					"[dry-run] would merge %s into %s (policy=%s; result: %d cluster(s), %d user(s), %d context(s))\n",
-					srcPath, destPath, onConflict,
+					srcPath, destPath, friendlyConflictPolicy(onConflict),
 					len(merged.Clusters), len(merged.AuthInfos), len(merged.Contexts))
 				return nil
 			}
@@ -184,7 +184,7 @@ func newMergeCmd() *cobra.Command {
 			if dryRun {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 					"[dry-run] would merge %s + %s -> %s (policy=%s; result: %d cluster(s), %d user(s), %d context(s))\n",
-					a, b, out, onConflict,
+					a, b, out, friendlyConflictPolicy(onConflict),
 					len(merged.Clusters), len(merged.AuthInfos), len(merged.Contexts))
 				return nil
 			}
@@ -199,6 +199,21 @@ func newMergeCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite the destination if it exists")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned change without writing")
 	return cmd
+}
+
+// friendlyConflictPolicy swaps the ---on-conflict=error flag value for a
+// clearer label in dry-run output, so "policy=error" doesn't read as a
+// failure report. Unknown values pass through verbatim.
+func friendlyConflictPolicy(p string) string {
+	switch p {
+	case "error":
+		return "fail-on-conflict"
+	case "skip":
+		return "skip-on-conflict"
+	case "overwrite":
+		return "overwrite-on-conflict"
+	}
+	return p
 }
 
 func loadOrEmpty(path string) (*clientcmdapi.Config, error) {
