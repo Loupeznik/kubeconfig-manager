@@ -20,11 +20,33 @@ Full docs live in [`docs/`](docs/README.md) — start with [Getting started](doc
 
 ## Install
 
+**Homebrew** (macOS, Linux):
+
+```sh
+brew install loupeznik/tap/kcm
+```
+
+**Arch** (via AUR, pre-built binary):
+
+```sh
+yay -S kubeconfig-manager-bin        # or paru, or any AUR helper
+```
+
+**Docker** (multi-arch, cosign-signed):
+
+```sh
+docker pull ghcr.io/loupeznik/kubeconfig-manager:latest
+```
+
+**GitHub releases:** pre-built tarballs for linux/darwin/windows on amd64 + arm64 live on the [releases page](https://github.com/Loupeznik/kubeconfig-manager/releases).
+
+**From source** (Go ≥ 1.26):
+
 ```sh
 go install github.com/loupeznik/kubeconfig-manager/cmd/kubeconfig-manager@latest
 ```
 
-The binary installs as `kubeconfig-manager`; symlink or alias to `kcm` for the shorter name.
+The source install places the binary as `kubeconfig-manager`; symlink or alias to `kcm` for the shorter name. The brew, AUR, and Docker distributions already install it as `kcm`.
 
 ## Usage
 
