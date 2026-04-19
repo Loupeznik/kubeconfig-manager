@@ -196,6 +196,19 @@ func (c *Config) RemoveAvailableTags(tags ...string) (removed []string) {
 				entry.ContextTags[ctxName] = ctxKept
 			}
 		}
+		for ctxName, excl := range entry.ContextTagExclusions {
+			kept := excl[:0]
+			for _, t := range excl {
+				if !drop[t] {
+					kept = append(kept, t)
+				}
+			}
+			if len(kept) == 0 {
+				delete(entry.ContextTagExclusions, ctxName)
+			} else {
+				entry.ContextTagExclusions[ctxName] = kept
+			}
+		}
 		c.Entries[hash] = entry
 	}
 	return removed

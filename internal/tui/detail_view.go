@@ -28,18 +28,41 @@ func ctxListKeyBindings() []key.Binding {
 // Kept aligned with the list's Items slice so keybindings can look up the
 // per-context data by cursor index.
 type contextRow struct {
-	name       string
-	cluster    string
-	user       string
-	namespace  string
-	isCurrent  bool
-	fileTags   []string
-	ctxTags    []string
-	ctxAlerts  state.Alerts
-	fileAlerts state.Alerts
+	name          string
+	cluster       string
+	user          string
+	namespace     string
+	isCurrent     bool
+	fileTags      []string
+	ctxTags       []string
+	ctxExclusions []string // file-level tags suppressed for this context
+	ctxAlerts     state.Alerts
+	fileAlerts    state.Alerts
 }
 
-func (r contextRow) effectiveTags() []string { return mergeTags(r.fileTags, r.ctxTags) }
+// effectiveTags mirrors state.Entry.ResolveTags: file-level ∪ context-level,
+// minus exclusions. Used to pre-populate the tag picker and render badges.
+func (r contextRow) effectiveTags() []string {
+	excluded := map[string]bool{}
+	for _, t := range r.ctxExclusions {
+		excluded[t] = true
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, t := range r.fileTags {
+		if !seen[t] && !excluded[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	for _, t := range r.ctxTags {
+		if !seen[t] && !excluded[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	return out
+}
 
 // alertIndicator returns the badge for the effective alert state, or "" when
 // there's nothing meaningful to show. "alerts off (override)" only appears
@@ -61,24 +84,6 @@ func (r contextRow) alertIndicator() string {
 
 func isContextAlertsExplicitlyDisabled(a state.Alerts) bool {
 	return !a.Enabled && (a.RequireConfirmation || a.ConfirmClusterName || len(a.BlockedVerbs) > 0)
-}
-
-func mergeTags(file, ctx []string) []string {
-	seen := map[string]bool{}
-	out := []string{}
-	for _, t := range file {
-		if !seen[t] {
-			seen[t] = true
-			out = append(out, t)
-		}
-	}
-	for _, t := range ctx {
-		if !seen[t] {
-			seen[t] = true
-			out = append(out, t)
-		}
-	}
-	return out
 }
 
 // contextItem is a single context rendered in the detail list. Matches the
@@ -161,20 +166,25 @@ func buildContextRows(fi *fileItem, entry state.Entry) []contextRow {
 		if entry.ContextTags != nil {
 			ctxTags = entry.ContextTags[n]
 		}
+		var ctxExclusions []string
+		if entry.ContextTagExclusions != nil {
+			ctxExclusions = entry.ContextTagExclusions[n]
+		}
 		var ctxAlerts state.Alerts
 		if entry.ContextAlerts != nil {
 			ctxAlerts = entry.ContextAlerts[n]
 		}
 		out = append(out, contextRow{
-			name:       n,
-			cluster:    cluster,
-			user:       user,
-			namespace:  ns,
-			isCurrent:  n == fi.file.Config.CurrentContext,
-			fileTags:   entry.Tags,
-			ctxTags:    ctxTags,
-			ctxAlerts:  ctxAlerts,
-			fileAlerts: entry.Alerts,
+			name:          n,
+			cluster:       cluster,
+			user:          user,
+			namespace:     ns,
+			isCurrent:     n == fi.file.Config.CurrentContext,
+			fileTags:      entry.Tags,
+			ctxTags:       ctxTags,
+			ctxExclusions: ctxExclusions,
+			ctxAlerts:     ctxAlerts,
+			fileAlerts:    entry.Alerts,
 		})
 	}
 	return out
@@ -202,7 +212,7 @@ func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.targetContext = r.name
-		blink := m.openTagEditor(r.ctxTags)
+		blink := m.openTagEditor(r.effectiveTags())
 		return m, blink
 	case "a":
 		r, ok := m.currentContextRow()

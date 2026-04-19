@@ -47,6 +47,8 @@ entries:
         enabled: false                    # explicitly disabled for this context even though file-level is on
     context_tags:                         # per-context additions on top of file-level tags
       prod-eu: [eu-primary]
+    context_tag_exclusions:               # file-level tags to suppress for a specific context
+      prod-us: [eu]
     helm_guard:                           # optional per-entry helm-guard override
       enabled: false                      # explicit disable overrides the global policy for this entry
     updated_at: 2026-04-17T12:00:00Z

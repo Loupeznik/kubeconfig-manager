@@ -34,8 +34,12 @@ type Entry struct {
 	Alerts        Alerts              `yaml:"alerts,omitempty"`
 	ContextAlerts map[string]Alerts   `yaml:"context_alerts,omitempty"`
 	ContextTags   map[string][]string `yaml:"context_tags,omitempty"`
-	HelmGuard     *HelmGuard          `yaml:"helm_guard,omitempty"`
-	UpdatedAt     time.Time           `yaml:"updated_at"`
+	// ContextTagExclusions lists file-level tags to subtract from a given
+	// context's effective set. Lets the user deselect an inherited tag from
+	// one context without removing it file-wide. See ResolveTags.
+	ContextTagExclusions map[string][]string `yaml:"context_tag_exclusions,omitempty"`
+	HelmGuard            *HelmGuard          `yaml:"helm_guard,omitempty"`
+	UpdatedAt            time.Time           `yaml:"updated_at"`
 }
 
 // Alerts is the destructive-action guard policy for the kubectl wrapper.
@@ -212,20 +216,27 @@ func (e Entry) ResolveAlerts(contextName string) Alerts {
 }
 
 // ResolveTags returns the effective tag set for a context — union of the
-// file-level tags and the context-level tags, deduplicated and order-preserving
-// (file-level first, then context-level additions).
+// file-level tags and the context-level tags, minus anything listed in
+// ContextTagExclusions for this context. Deduplicated and order-preserving:
+// file-level first, then context-level additions.
 func (e Entry) ResolveTags(contextName string) []string {
+	excluded := map[string]bool{}
+	if contextName != "" {
+		for _, t := range e.ContextTagExclusions[contextName] {
+			excluded[t] = true
+		}
+	}
 	seen := make(map[string]bool, len(e.Tags))
 	out := make([]string, 0, len(e.Tags))
 	for _, t := range e.Tags {
-		if !seen[t] {
+		if !seen[t] && !excluded[t] {
 			seen[t] = true
 			out = append(out, t)
 		}
 	}
 	if contextName != "" {
 		for _, t := range e.ContextTags[contextName] {
-			if !seen[t] {
+			if !seen[t] && !excluded[t] {
 				seen[t] = true
 				out = append(out, t)
 			}

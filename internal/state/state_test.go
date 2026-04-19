@@ -243,6 +243,70 @@ entries: {}
 	}
 }
 
+// ---- Tag resolution with per-context exclusions ---------------------------
+
+func TestResolveTagsUnionsFileAndContext(t *testing.T) {
+	e := Entry{
+		Tags: []string{"prod", "eu"},
+		ContextTags: map[string][]string{
+			"ctx-a": {"ha"},
+		},
+	}
+	got := e.ResolveTags("ctx-a")
+	want := []string{"prod", "eu", "ha"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("index %d: got %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestResolveTagsPerContextExclusionSubtracts(t *testing.T) {
+	// File-level has prod+eu. For ctx-b we don't want "eu" showing up even
+	// though it's inherited from file-level. Exclusion must filter it out.
+	e := Entry{
+		Tags: []string{"prod", "eu", "critical"},
+		ContextTagExclusions: map[string][]string{
+			"ctx-b": {"eu"},
+		},
+	}
+	got := e.ResolveTags("ctx-b")
+	for _, tag := range got {
+		if tag == "eu" {
+			t.Errorf("eu should be excluded for ctx-b; got %v", got)
+		}
+	}
+	// Other contexts still inherit it.
+	if !contains(e.ResolveTags("ctx-a"), "eu") {
+		t.Errorf("ctx-a should still inherit eu; got %v", e.ResolveTags("ctx-a"))
+	}
+}
+
+func TestResolveTagsExclusionDoesNotAffectFileEntry(t *testing.T) {
+	// Exclusions are scoped; file-level Tags slice is untouched.
+	e := Entry{
+		Tags: []string{"prod"},
+		ContextTagExclusions: map[string][]string{
+			"ctx-a": {"prod"},
+		},
+	}
+	if len(e.Tags) != 1 || e.Tags[0] != "prod" {
+		t.Errorf("file-level tags should not change: %v", e.Tags)
+	}
+}
+
+func contains(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
 func TestMigrateRejectsFutureVersion(t *testing.T) {
 	cfg := &Config{Version: 99}
 	if err := migrate(cfg); err == nil {

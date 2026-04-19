@@ -110,23 +110,60 @@ func toggleAlert(store state.Store, id kubeconfig.Identity, pathHint, contextNam
 }
 
 // setTags replaces tags at the file level (contextName == "") or for a specific
-// context within the file.
+// context within the file. For per-context saves, the caller supplies the
+// full effective tag list they want. We split that into additions (ctx_tags)
+// and subtractions from the file-level set (ctx_tag_exclusions) so the user
+// can unassign an inherited tag from one context without affecting others.
 func setTags(store state.Store, id kubeconfig.Identity, pathHint, contextName string, tags []string) error {
 	return store.Mutate(context.Background(), func(cfg *state.Config) error {
 		entry := cfg.TakeEntry(id.StableHash, id.ContentHash)
 		entry.PathHint = pathHint
 		if contextName == "" {
 			entry.Tags = tags
-		} else {
-			if entry.ContextTags == nil {
-				entry.ContextTags = map[string][]string{}
-			}
-			if len(tags) == 0 {
-				delete(entry.ContextTags, contextName)
-			} else {
-				entry.ContextTags[contextName] = tags
+			entry.Touch()
+			cfg.Entries[id.StableHash] = entry
+			return nil
+		}
+
+		selection := map[string]bool{}
+		for _, t := range tags {
+			selection[t] = true
+		}
+		fileSet := map[string]bool{}
+		for _, t := range entry.Tags {
+			fileSet[t] = true
+		}
+
+		var ctxTags []string
+		for _, t := range tags {
+			if !fileSet[t] {
+				ctxTags = append(ctxTags, t)
 			}
 		}
+		var exclusions []string
+		for _, t := range entry.Tags {
+			if !selection[t] {
+				exclusions = append(exclusions, t)
+			}
+		}
+
+		if entry.ContextTags == nil {
+			entry.ContextTags = map[string][]string{}
+		}
+		if entry.ContextTagExclusions == nil {
+			entry.ContextTagExclusions = map[string][]string{}
+		}
+		if len(ctxTags) == 0 {
+			delete(entry.ContextTags, contextName)
+		} else {
+			entry.ContextTags[contextName] = ctxTags
+		}
+		if len(exclusions) == 0 {
+			delete(entry.ContextTagExclusions, contextName)
+		} else {
+			entry.ContextTagExclusions[contextName] = exclusions
+		}
+
 		entry.Touch()
 		cfg.Entries[id.StableHash] = entry
 		return nil
@@ -165,6 +202,12 @@ func renameContextOnDisk(store state.Store, path string, oldID kubeconfig.Identi
 				entry.ContextTags[newName] = t
 			}
 		}
+		if entry.ContextTagExclusions != nil {
+			if x, ok := entry.ContextTagExclusions[oldName]; ok {
+				delete(entry.ContextTagExclusions, oldName)
+				entry.ContextTagExclusions[newName] = x
+			}
+		}
 		entry.PathHint = filepath.Base(path)
 		entry.Touch()
 		cfg.Entries[newID.StableHash] = entry
@@ -194,6 +237,7 @@ func deleteContextOnDisk(store state.Store, path string, oldID kubeconfig.Identi
 		entry := cfg.TakeEntry(oldID.StableHash, oldID.ContentHash)
 		delete(entry.ContextAlerts, name)
 		delete(entry.ContextTags, name)
+		delete(entry.ContextTagExclusions, name)
 		entry.PathHint = filepath.Base(path)
 		entry.Touch()
 		cfg.Entries[newID.StableHash] = entry
