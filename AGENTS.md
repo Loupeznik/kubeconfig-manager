@@ -87,6 +87,22 @@ Commit the regenerated `docs/cli/*.md` and `docs/man/*.1` in the same commit as 
 - `GlobalFallback` is plain bool, default false. Opt-in because raw-path tokenization is noisy.
 - Legacy single `pattern:` YAML field is auto-migrated to `patterns:` list on load (`UnmarshalYAML` in `schema.go`).
 
+## GitHub Actions versioning
+
+Workflows live under `.github/workflows/`. Two rules, both mandatory:
+
+1. **Pin every `uses:` to an explicit major** — `@v4`, `@v7`, etc. Never `@latest`, never `@main`, never a bare action name.
+2. **Check for the current latest major before adding or updating an action.** Node-based actions deprecate Node runtimes on a rolling basis (Node 20 → Node 24 mid-2026), and GitHub surfaces deprecation warnings on CI runs. When you bump or add an action, `WebSearch` or open the action's releases page first and pick the latest stable major — don't reuse whatever you saw in a tutorial two majors ago.
+
+When a CI run surfaces a "Node.js 20 actions are deprecated" warning (or similar), treat it as a tracked task: find the newest major of every action the warning names and bump in one commit.
+
+Current pins worth knowing about:
+- `actions/checkout@v6`, `actions/setup-go@v6` — Node 24 era.
+- `docker/{login,setup-buildx,setup-qemu}-action@v4` — Node 24 majors; v3 was Node 20.
+- `sigstore/cosign-installer@v4` — matches the v4 docker actions.
+- `goreleaser/goreleaser-action@v7` with `version: '~> v2.14'` — the action version (@v7) and the goreleaser binary version (`~> v2.14`) are independent pins; both matter.
+- `golangci/golangci-lint-action@v9` with `version: latest` — the outer action is pinned, the inner golangci-lint binary is `latest`. Tightening the binary pin is future work.
+
 ## Release + Docker
 
 - `.goreleaser.yaml` uses `dockers_v2:` (requires goreleaser ≥ 2.14). Pinned to `~> v2.14` in both workflows.
