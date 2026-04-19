@@ -61,7 +61,7 @@ One-time tap cleanup to keep existing users on a smooth upgrade path:
 
 Gotchas to know about:
 
-- **`HOMEBREW_TAP_TOKEN` is required.** If unset when you tag, the `homebrew_casks:` stage errors at the push step. The rest of the release (GitHub release, ghcr, AUR) still completes because goreleaser runs them in parallel.
+- **`HOMEBREW_TAP_TOKEN` is required.** If unset when you tag, the `homebrew_casks:` stage errors at the push step. The rest of the release (GitHub release, ghcr, AUR, snap) still completes because goreleaser runs them in parallel.
 - **`brew audit` is not enforced.** That's only for homebrew-core submissions. Third-party taps can ship anything that parses as a Ruby cask/formula.
 - **The tap repo doesn't need to exist before the first release** — goreleaser will push the first commit regardless. But creating it yourself means you can set up branch protection, a README, and a topic (`homebrew-tap`) upfront.
 
@@ -86,23 +86,62 @@ On release:
 - Users install via `yay -S kubeconfig-manager-bin` (or any other AUR helper).
 - Package installs the binary, man pages, and bash/zsh/fish completions.
 
-## Snap Store — postponed
+## Snap Store
 
-Snap publishing is deliberately **not** wired in the current `.goreleaser.yaml`. The `kubeconfig-manager` name was blocked during store registration and needs a dispute / clarification round with the snap store team before we can proceed. Until then, we don't generate `.snap` artifacts on release.
+One-time:
 
-When we come back to it, the work is:
+1. Create a Snapcraft account at <https://snapcraft.io/account>.
+2. Register the snap name:
 
-1. Resolve the name collision (either clear `kubeconfig-manager` via <https://forum.snapcraft.io/c/store-requests/19> or fall back to `kcm` — which may also be taken; check with `snapcraft register --dry-run`).
-2. Re-add the `snapcrafts:` block to `.goreleaser.yaml` — `id: kcm`, `ids: [kcm]`, `confinement: classic`, `grade: stable`, `license: Apache-2.0`, with a single `apps.kcm` entry. Reference: <https://goreleaser.com/customization/package/snapcraft/>.
-3. Re-add the `snapcraft` install step + `SNAPCRAFT_STORE_CREDENTIALS` env to `release.yml`.
-4. Request classic-confinement approval via the forum link above before the first published release — classic confinement is needed because kcm reads `~/.kube`, exec's `kubectl` / `helm`, and writes to the user's shell rc.
+    ```sh
+    sudo snap install snapcraft --classic
+    snapcraft login
+    snapcraft register kubeconfig-manager
+    ```
+
+3. Export a store credential for CI. Run this on your **host** machine (not inside a container) — snapcraft uses a browser-based SSO flow for 2FA, which the old email+password path in `snapcore/snapcraft:*` docker images can't complete.
+
+    Note the scoping trade-off with `--snaps=`:
+
+    - A **just-registered** snap name (present in your dashboard but never uploaded) can't be used with `--snaps=<name>` — snapcraft errors with `Snap not found for the given snap name`. The scoping requires the snap to have at least one published revision.
+    - Omitting `--snaps` gives you an **account-scoped** credential instead: it can push/release any snap the account owns. For a single-snap account this is fine, and the first CI release will itself be the "publish" step that activates the name.
+
+    Recommended for a fresh account:
+
+    ```sh
+    snapcraft export-login \
+      --acls=package_access,package_push,package_update,package_release \
+      --expires=2030-01-01 snap-credentials.txt
+    ```
+
+    If you later want to tighten the credential to a specific snap, first publish one revision (any channel), then re-export with `--snaps=kubeconfig-manager` and swap the secret.
+
+    Omit `--channels` too — we currently publish `devel` revisions to `edge`/`beta` and will flip to `stable` at v1.0.0 without re-issuing the secret. If you prefer an explicit channel allowlist, pass `--channels=stable,candidate,beta,edge`; the narrow `--channels=stable` form rejects uploads while grade is `devel`.
+
+    If you must export from a container, run `snapcraft login` interactively first (it prompts for the OTP separately), then run `snapcraft export-login` in the same session.
+
+4. Add the contents of `snap-credentials.txt` as the `SNAPCRAFT_STORE_CREDENTIALS` Actions secret on this repo.
+
+On release, goreleaser:
+
+- Builds the `.snap` under `confinement: classic` for linux/amd64 + arm64.
+- Sets `grade: devel` while we're on the v0.x line, and `grade: stable` from v1.0.0 onward — the template `{{ if eq .Major 0 }}devel{{ else }}stable{{ end }}` flips automatically on the v1 tag. Snap store restricts `devel` revisions to the `edge` and `beta` channels; `candidate` and `stable` are blocked until grade flips at v1.0.0. Grade is per-revision (not per-snap-name), so the v1.0.0 revision can publish straight to `stable` regardless of what v0.x shipped.
+
+Users install with:
+
+```sh
+sudo snap install kubeconfig-manager --classic
+```
+
+**Why classic confinement.** kcm reads `~/.kube`, exec's `kubectl` / `helm` from the user's PATH, and writes to the user's shell rc during `install-shell-hook`. None of those work under strict confinement without hand-wiring interfaces — classic is simpler and what users of this class of tool expect. Classic confinement requires a one-time review from the snap store team (request via <https://forum.snapcraft.io/c/store-requests/19>) before the first publish; the upload itself fails with an approval message until that's granted.
 
 ## Secrets quick-reference
 
 | Secret | Used by | Created via |
 | --- | --- | --- |
-| `HOMEBREW_TAP_TOKEN` | `brews:` | Classic PAT with `repo` scope |
+| `HOMEBREW_TAP_TOKEN` | `homebrew_casks:` | Classic PAT with `repo` scope |
 | `AUR_KEY` | `aurs:` | `ssh-keygen`, public key on AUR |
+| `SNAPCRAFT_STORE_CREDENTIALS` | `snapcrafts:` | `snapcraft export-login` |
 | `GITHUB_TOKEN` | ghcr, release notes | Built-in (no setup) |
 
 ## Before the next tag

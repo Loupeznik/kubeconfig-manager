@@ -42,6 +42,12 @@ fi
 
 cd "$(git rev-parse --show-toplevel)"
 
+# Skip if the repo isn't a Go module — lets the agent commit in adjacent
+# repos (e.g. the Homebrew tap) without tripping over the Go checks.
+if [ ! -f go.mod ]; then
+	exit 0
+fi
+
 echo "[pre-commit] running gofmt, go vet, go test..." >&2
 
 # gofmt — exclude generated paths that aren't real Go source.

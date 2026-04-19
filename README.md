@@ -32,6 +32,12 @@ brew install loupeznik/tap/kcm
 yay -S kubeconfig-manager-bin        # or paru, or any AUR helper
 ```
 
+**Snap** (any Linux distro with snapd). While `kcm` is on the v0.x line it ships on the `edge` channel; this flips to `stable` at v1.0.0.
+
+```sh
+sudo snap install kubeconfig-manager --classic --edge
+```
+
 **Docker** (multi-arch, cosign-signed):
 
 ```sh
@@ -46,7 +52,7 @@ docker pull ghcr.io/loupeznik/kubeconfig-manager:latest
 go install github.com/loupeznik/kubeconfig-manager/cmd/kubeconfig-manager@latest
 ```
 
-The source install places the binary as `kubeconfig-manager`; symlink or alias to `kcm` for the shorter name. The brew, AUR, and Docker distributions already install it as `kcm`.
+The source install places the binary as `kubeconfig-manager`; symlink or alias to `kcm` for the shorter name. The brew, AUR, and Docker distributions already install it as `kcm`. The snap package ships both names (`snap alias kubeconfig-manager kcm` to activate the short name under strict snap alias rules).
 
 ## Usage
 

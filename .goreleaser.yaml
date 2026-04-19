@@ -102,6 +102,28 @@ homebrew_casks:
       - docs/man/*.1
     skip_upload: auto
 
+snapcrafts:
+  - id: kcm
+    ids:
+      - kcm
+    name: kubeconfig-manager
+    title: kubeconfig-manager
+    summary: TUI + CLI for managing kubeconfig files and kubectl contexts
+    description: |
+      kcm (kubeconfig-manager) is a TUI + CLI for managing local kubeconfig
+      files with tagging, destructive-action guards for kubectl and helm,
+      and shell integration (bash, zsh, fish, pwsh).
+    # v0.x is preview; anything v1+ is stable. snap store rejects `devel`
+    # grade from the `stable` channel, which matches prerelease semantics.
+    grade: '{{ if eq .Major 0 }}devel{{ else }}stable{{ end }}'
+    confinement: classic
+    license: Apache-2.0
+    publish: true
+    apps:
+      kcm:
+        command: kcm
+        aliases: [kcm, kubeconfig-manager]
+
 aurs:
   - name: kubeconfig-manager-bin
     ids:
